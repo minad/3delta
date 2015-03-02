@@ -1,0 +1,1565 @@
+#!/usr/bin/env tclsh
+
+if {[catch {
+    package require Tk 8.5
+    package require history
+    package require autoscroll
+    package require snit
+    package require tablelist
+} error]} {
+    puts "$error\nPlease install tk8.5, tcllib and tklib, e.g. 'apt-get install tk8.5 tcllib tklib'"
+    exit 1
+}
+
+proc every {ms args} {
+    {*}$args
+    after $ms [list after idle [info level 0]]
+}
+
+snit::type notifier {
+    variable watchers {}
+
+    method attach {w} {
+	lappend watchers $w
+    }
+
+    method detach {w} {
+	set watchers [lsearch -all -inline -not -exact $watchers $w]
+    }
+
+    method notify {event data} {
+	foreach w $watchers {
+	    {*}$w $self $event $data
+	}
+    }
+}
+
+snit::type connection {
+    option -address
+    variable fh
+    variable lastError ""
+    variable connected 0
+    variable reconnectId 0
+
+    delegate method * to notifier
+    variable notifier
+
+    constructor {args} {
+	$self configurelist $args
+	set notifier [notifier %AUTO%]
+ 	$self Connect
+    }
+
+    method connected {} {
+	return [expr {[$self Good] && $connected}]
+    }
+
+    method send {data} {
+	if {[$self connected]} {
+	    if {[catch {puts $fh $data} error]} {
+		$self Reconnect $error
+	    }
+	}
+    }
+
+    method queueSize {} {
+	return [expr [string match "sock*" "$fh"] ? 10 : 1]
+    }
+
+    method Good {} { # private
+	if {"$fh" eq ""} {
+	    $self Reconnect $lastError
+	    return 0
+	}
+	if {[string match "sock*" $fh]} {
+	    set error error
+            catch {set error [chan configure $fh -error]} error
+	    if {$error ne ""} {
+                $self Reconnect $error
+                return 0
+	    }
+	    set lastError ""
+	}
+	return 1
+    }
+
+    method Connect {} { # private
+	set reconnectId 0
+	if {[catch {
+	    set address $options(-address)
+	    if {[regexp {\A(/|COM)} $address]} {
+		set fh [open $address RDWR]
+		chan configure $fh -mode 11500,n,8,1
+	    } else {
+		if {[llength [set address [split $address :]]] == 1} {
+		    lappend address 23
+		}
+		set fh [socket -async {*}$address]
+	    }
+	    chan configure $fh -blocking 0 -buffering none -encoding binary -eofchar {}
+	    chan event $fh readable [list $self Readable]
+	    chan event $fh writable [list $self Writable]
+	} error]} {
+	    $self Reconnect $error
+	}
+    }
+
+    method Readable {} { # private
+	if {[$self connected]} {
+	    set line x
+	    while {[string length $line]} {
+		if {[catch {set line [read $fh 4096]} error]} {
+		    $self Reconnect $error
+		    return
+		}
+		if {[string length $line]} {
+		    $self notify receive $line
+		}
+		if {[eof $fh]} {
+		    $self Reconnect "connection closed"
+		    return
+		}
+	    }
+	}
+    }
+
+    method Writable {} { # private
+	if {[$self Good]} {
+	    chan event $fh writable ""
+	    if {[string match "sock*" $fh]} {
+		# telnet: do suppress go ahead
+		catch {puts -nonewline $fh "\xff\xfd\x03"}
+		# telnet: don't x-prompt (smoothie extension)
+		catch {puts -nonewline $fh "\xff\xfe\x55"}
+	    }
+	    set connected 1
+	    $self notify connect ""
+	}
+    }
+
+    method Reconnect {error} { # private
+	catch {close $fh}
+	lassign {0 ""} connected fh
+	if {$lastError ne $error} {
+	    set lastError $error
+	    $self notify disconnect $error
+	}
+	if {$reconnectId == 0} {
+	    set reconnectId [after 5000 $self Connect]
+	}
+    }
+}
+
+snit::type gcodequeue {
+    option -connection
+    variable sent 0
+    variable received 0
+    variable queued 0
+    variable queue {}
+    variable filter {}
+
+    delegate method * to notifier
+    variable notifier
+
+    delegate method connected to conn
+    delegate method queueSize to conn
+    variable conn
+
+    constructor {args} {
+	$self configurelist $args
+
+	set notifier [notifier %AUTO%]
+	set conn $options(-connection)
+
+	$conn attach [list $self Event]
+    }
+
+    method sent      {} { return $sent }
+    method queued    {} { return $queued }
+    method received  {} { return $received }
+
+    method queueFull {} {
+	return [expr {($queued - $received) >= [$self queueSize]}]
+    }
+
+    method filterBegin {name} {
+	if {[expr {1e99 == [lindex $filter end]}]} {
+	    error "There is already an active filter!"
+	}
+	lappend filter $name $queued 1e99
+    }
+
+    method filterEnd {} {
+	lset filter end $queued
+    }
+
+    method filter {name data} {
+       $self filterBegin $name
+       $self send $data
+       $self filterEnd
+    }
+
+    method send {data} {
+	set data [regsub -all -line {^\s*$\n?|\s*;.*$} $data ""]
+	incr queued [regexp -all -line {^[GM]} $data]
+	lappend queue {*}[split $data "\n"]
+	$self SendQueue
+    }
+
+    method Event {c event data} { # private
+	if {$event eq "receive"} {
+	    $self RemoveOldFilters
+	    foreach line [split [string trimright $data "\n"] "\n"] {
+		$self ReceivedLine "$line\n"
+	    }
+	    $self SendQueue
+	} else {
+	    if {$event eq "connect"} {
+		lassign {0 0 0 {} {}} sent received queued queue filter
+	    }
+	    $self notify $event $data
+	}
+    }
+
+    method ReceivedLine {line} { # private
+	incr received [set inc [regexp {\Aok\s} $line]]
+	if {$received > $sent} { set received $sent }
+	foreach {name min max} $filter {
+	    if {$received > $min && $received - $inc < $max} {
+		$self notify $name $line
+		return
+	    }
+	}
+	$self notify receive $line
+    }
+
+    method RemoveOldFilters {} { # private
+	set i -1
+	foreach {name min max} $filter {
+	    if {$received < $max} {
+		if {$i > 0} {
+		    set filter [lreplace $filter 0 $i]
+		}
+		break
+	    }
+	    incr i 3
+	}
+    }
+
+    method SendQueue {} { # private
+	while {$sent - $received < [$self queueSize] && [llength $queue] > 0} {
+	    set line [lindex $queue 0]
+	    set queue [lreplace $queue 0 0]
+	    incr sent [regexp {\A[GM]} $line]
+	    $conn send $line
+	}
+    }
+}
+
+snit::type printer {
+    option -connection
+    variable conn
+
+    # mode = idle, playing, uploading, sending
+    variable status -array {
+	mode idle
+    }
+    variable newFiles 0
+
+    variable fastSent 0
+    variable slowSent 0
+    variable queued 0
+
+    typevariable statuslegend -array {
+	bedTemp          "Bed temp. (°C)"
+	bedTargetTemp    "Bed target temp. (°C)"
+	bedDeltaTemp     "Bed temp. deviation (°C)"
+	bedHeater        "Bed heater PWM"
+	hotendTemp       "Hotend temp. (°C)"
+	hotendTargetTemp "Hotend target temp. (°C)"
+	hotendDeltaTemp  "Hotend temp. deviation (°C)"
+	hotendHeater     "Hotend heater PWM"
+	position         "Position (mm)"
+	axis             "Axis (mm)"
+	e                "Extruder (mm)"
+	progress         "Progress (%)"
+    }
+
+    constructor {args} {
+	$self configurelist $args
+	set conn $options(-connection)
+	$conn attach [list $self Event]
+	every 250 $self Update
+    }
+
+    method status {name {value {}} args} {
+	if {"$value" eq "-default"} {
+	    return [expr {[info exists status($name)] ? $status($name) : $args}]
+	}
+	return [set status($name) {*}$value]
+    }
+
+    method statusvar {name} {
+	return [myvar status($name)]
+    }
+
+    typemethod statuslegend {var} {
+	return [expr {[info exists statuslegend($var)] ? $statuslegend($var) : [string totitle $var]}]
+    }
+
+    method Event {c event data} { # private
+	if {$event eq "connect"} {
+	    # safety reason: assume we are playing
+	    lassign {yes playing 0 0} status(connected) status(mode) fastSent slowSent queued
+	} elseif {$event eq "disconnect"} {
+	    set status(connected) no
+	} elseif {$event eq "receive" || $event eq "status"} {
+	    # todo hack M665 works only on smoothie like this.
+	    # Patch to support different firmware. patch smoothie to return something standard.
+	    regexp -line -nocase {R:\s*(\d+\.\d+).*Max\s+Z\s+(\d+\.\d+)} $data matched status(armRadius) status(zMax)
+	    regexp -line {T:\s*(\d+\.\d+)\s*/\s*(\d+.\d+)\s*@(\d+)} $data matched status(hotendTemp) status(hotendTargetTemp) status(hotendHeater)
+	    regexp -line {B:\s*(\d+\.\d+)\s*/\s*(\d+.\d+)\s*@(\d+)} $data matched status(bedTemp) status(bedTargetTemp) status(bedHeater)
+
+	    foreach x {x y z a b c e} {
+		regexp -line "C:*.*[string toupper $x]:\\s*(-?\\d+\\.\\d+)" $data matched status($x)
+	    }
+
+	    catch {set status(hotend)   "$status(hotendTemp)/$status(hotendTargetTemp)@$status(hotendHeater)"}
+	    catch {set status(bed)      "$status(bedTemp)/$status(bedTargetTemp)@$status(bedHeater)"}
+	    catch {set status(position) "$status(x), $status(y), $status(z)"}
+	    catch {set status(axis)     "$status(a), $status(b), $status(c)"}
+	    catch {set status(hotendDeltaTemp) [expr {$status(hotendTemp) - $status(hotendTargetTemp)}]}
+	    catch {set status(bedDeltaTemp) [expr {$status(bedTemp) - $status(bedTargetTemp)}]}
+
+	    if {$status(mode) eq "idle" || $status(mode) eq "playing"} {
+		set mode $status(mode)
+		if {[regexp -line -nocase {SD\s+printing\s+byte\s+(\d+)/(\d+)} $data matched printed total]} {
+		    set status(progress) [format "%.2f" [expr {(100.0 * $printed) / max(1, $total)}]]
+		    set mode [expr {$printed == 0 ? "idle" : "playing"}]
+	        } elseif {[regexp -nocase {Not.*playing} $data]} {
+		    lassign {0 idle} status(progress) mode
+		}
+		if {$status(mode) ne $mode} {
+		    set status(mode) $mode
+		    set slowSent 0
+		}
+            }
+
+	    foreach file [regexp -all -inline -nocase {[\w\.\-\+]+\.g[\w\.\-\+]*} $data] {
+		if {$newFiles == 0} {
+		    set newFiles {}
+		}
+		lappend newFiles $file
+		lappend status(files) $file
+		set newFiles [lsort -unique $newFiles]
+		set status(files) [lsort -unique $status(files)]
+	    }
+	}
+    }
+
+    method Update {} { # private
+	if {$status(mode) ne "uploading" && [$conn received] >= $queued && [$conn connected]} {
+	    set now [clock milliseconds]
+	    if {$now - $slowSent >= 10000} {
+		if {$status(mode) eq "idle"} {
+		    if {$newFiles != 0} {
+			set status(files) $newFiles
+			set newFiles 0
+		    }
+		    # M20 is really slow, don't do that often and while playing
+		    # todo hack first gcode must have one line answer for filtering
+		    $conn filter status "M114\nM105\nM27\nM20\nM665"
+		} else {
+		    # todo hack first gcode must have one line answer for filtering
+		    $conn filter status "M114\nM105\nM27\nM665"
+		}
+		set slowSent $now
+		set fastSent $now
+		set queued [$conn queued]
+	    } elseif {$now - $fastSent >= 1000} {
+		# todo hack first gcode must have one line answer for filtering
+		$conn filter status "M114\nM105\nM27"
+		set fastSent $now
+		set queued [$conn queued]
+	    }
+	}
+    }
+}
+
+snit::type sender {
+    option -connection
+    option -printer
+    option -mode
+    variable conn
+    variable printer
+    variable mode ""
+    variable running 1
+    variable data
+    variable file
+    variable sent 0
+
+    constructor {args} {
+	$self configurelist $args
+
+	set conn $options(-connection)
+	set printer $options(-printer)
+
+	set file [tk_getOpenFile -title "Select file" -filetypes {{G-Code {.gcode .g*}} {{All files} {*}}}]
+	if {$file eq "" || [catch {set fh [open $file r]}]} {
+	    after idle $self destroy
+	    return
+	}
+
+	set data [read $fh]
+	close $fh
+
+	set data [split $data "\n"]
+	set file [file tail $file]
+
+	set mode $options(-mode)
+	$printer status mode $mode
+	$conn attach [list $self Send]
+
+	if {$mode eq "uploading"} {
+	    $self UploadProgress
+	    $conn filterBegin upload
+	    $conn send "M28 $file"
+	}
+
+	after idle $self Send
+    }
+
+    destructor {
+	if {$mode ne ""} {
+	    if {$mode eq "uploading"} {
+		$conn send "M29"
+		if {$sent < [llength $data]} {
+		    $conn send "M30 $file"
+		}
+		$conn filterEnd
+		destroy .uploadprogress
+	    }
+	    $printer status mode idle
+	    $conn detach [list $self Send]
+	}
+    }
+
+    method setRunning {run} {
+	set running $run
+	$self Send
+    }
+
+    method Send {args} { # private
+	while {$running && ![$conn queueFull]} {
+	    if {$sent >= [llength $data]} {
+		$self destroy
+		break
+	    }
+	    $conn send [lindex $data $sent] {*}[expr {$mode ne "uploading" ? {1} : {}}]
+	    incr sent
+	    if {$mode ne "uploading"} {
+		$printer status progress [expr {100 * $sent / [llength $data]}]
+	    }
+	}
+    }
+
+    method UploadProgress {} { # private
+	toplevel .uploadprogress
+
+	ttk::progressbar .uploadprogress.progress -variable [myvar sent] -maximum [llength $data]
+	ttk::button .uploadprogress.cancel -text "Cancel" -command [list $self destroy]
+	pack .uploadprogress.progress -fill x -expand 1 -side left
+	pack .uploadprogress.cancel -side left
+
+	wm title .uploadprogress "Uploading $file..."
+	wm transient .uploadprogress .
+	wm geometry .uploadprogress =300x0+0+0
+	wm deiconify .uploadprogress
+
+	tkwait visibility .uploadprogress
+	grab .uploadprogress
+    }
+}
+
+snit::widget calibration {
+    hulltype ttk::frame
+    option -connection
+    variable conn
+    variable zMax
+    variable zPos
+    variable enabled 0
+
+    constructor {args} {
+	$self configurelist $args
+
+	set conn $options(-connection)
+
+	ttk::checkbutton $win.enable -text "Calibration" -variable [myvar enabled]
+	pack $win.enable -fill x
+	trace add variable enabled write [list $self Toggle]
+
+	ttk::frame $win.calibration
+	ttk::button $win.calibration.zprobe -text "z-Probe: Set trim values"           -command [list $conn send "G32 ; z-Probe\nG28 ; Home\nG0 Z100 ; Move 10cm above bed"]
+	ttk::button $win.calibration.height -text "Set max. z from current position"   -command [list $self SetZMax]
+	ttk::button $win.calibration.offset -text "Set z offset from current position" -command [list $conn send "M306 Z0 ; Set z offset from current position\nG28 ; Home\nG0 Z0 ; Move to calibrated position"]
+	ttk::button $win.calibration.save   -text "Save"                               -command [list $conn send "M500 ; Save"]
+
+	pack $win.calibration.zprobe $win.calibration.height $win.calibration.offset $win.calibration.save -fill x -expand 1
+    }
+
+    method Toggle {args} { # private
+	if {$enabled} {
+	    pack $win.calibration -fill x
+	} else {
+	    pack forget $win.calibration
+	}
+    }
+
+    # set max z based on current position
+    method SetZMax {} { # private
+	lassign {"" ""} zMax zPos
+	$conn attach [list $self ReadZMax]
+	$conn print "Calibration: Obtaining current position and max. z...\n"
+	$conn send "M114 ; Get position\nM665 ; Get max. z"
+    }
+
+    method ReadZMax {c event data} { # private
+	# todo hack M665 works only on smoothie like this.
+	regexp -line -nocase {Max\s+Z\s+(\d+\.\d+)} $data matched zMax
+	regexp -line {C:*.*Z:\s*(-?\d+\.\d+)} $data matched zPos
+	if {$zMax ne "" && $zPos ne ""} {
+	    set zMax [expr {$zMax - $zPos}]
+	    $conn send [format "M206 Z0 ; Reset z offset\nM665 Z%.3f ; Set new z max\nG28 ; Home\nG0 Z0 ; Move to calibrated position" $zMax]
+	    $conn print "Calibration: New max. z value set, save to finish.\n"
+	    $conn detach [list $self ReadZMax]
+	    lassign {"" ""} zMax zPos
+	}
+    }
+}
+
+snit::widget compass {
+    option -command
+    variable command
+    variable canvas
+    variable lastFill
+    variable lastCmd
+    variable width   250
+    variable height  220
+    variable xyDistance {0.1 1 10 30}
+    variable zDistance {0.01 0.1 1 10 50}
+    variable color -array {
+	90   "light green"
+	210  "light blue"
+	330  "light salmon"
+    }
+
+    constructor {args} {
+	$self configurelist $args
+
+	set command $options(-command)
+
+	set canvas $win.canvas
+	canvas $canvas -width $width -height $height
+	pack $win.canvas
+
+	set h [expr {$height - 1}]
+	set xCenter [expr {$width - $h / 2}]
+	set yCenter [expr {$h / 2 + 1}]
+	set steps [llength $xyDistance]
+	set radiusStep [expr {$h / (2 * $steps + 1)}]
+
+	for {set i $steps} {$i > 0} {incr i -1} {
+	    set dist [lindex $xyDistance [expr {$i - 1}]]
+	    for {set angle 30} {$angle < 360} {incr angle 60} {
+		set radius [expr {$i * $radiusStep + $radiusStep / 2}]
+		$canvas create arc [expr {$xCenter - $radius}] [expr {$yCenter - $radius}] [expr {$xCenter + $radius}] [expr {$yCenter + $radius}] \
+		    -fill [expr {[info exists color($angle)] ? $color($angle) : "beige"}] -start [expr {$angle - 30}] -extent 60 -tags [list button frame cmd/$angle/$dist]
+	    }
+	    $canvas create text $xCenter [expr {$yCenter - $radius + $radiusStep / 2}] -text $dist -font {-size 6} -tags [list button cmd/90/$dist]
+	}
+
+	$canvas create oval [expr {$xCenter - $radiusStep / 2}] [expr {$yCenter - $radiusStep / 2}] [expr {$xCenter + $radiusStep / 2}] [expr {$yCenter + $radiusStep / 2}] \
+	    -fill "yellow" -tags {button frame cmd/center}
+
+	set steps [llength $zDistance]
+	set zStep [expr {$h / (2 * $steps)}]
+
+	for {set i 0} {$i < $steps} {incr i} {
+	    set dist [lindex $zDistance $i]
+
+	    $canvas create rectangle 1 [expr {$h / 2 - $zStep * ($i + 1)}] [expr {$width - $h - 5}] [expr {$h / 2 - $zStep * $i}] \
+		-fill plum -tags button -tags [list button frame cmd/z/$dist]
+	    $canvas create rectangle 1 [expr {$h / 2 + $zStep * ($i + 1)}] [expr {$width - $h - 5}] [expr {$h / 2 + $zStep * $i}] \
+		-fill plum -tags button -tags [list button frame cmd/z/-$dist]
+
+	    $canvas create text 12 [expr {$h / 2 - $zStep/2 - $zStep * $i}] -text $dist -font {-size 6} -tags [list button cmd/z/$dist]
+	    $canvas create text 12 [expr {$h / 2 + $zStep/2 + $zStep * $i}] -text [expr {-$dist}] -font {-size 6} -tags [list button cmd/z/-$dist]
+	}
+
+	$canvas bind button <Enter> [list $self Enter]
+	$canvas bind button <Leave> [list $self Leave]
+	$canvas bind button <ButtonPress-1> [list $self Press]
+	$canvas bind button <ButtonRelease-1> [list $self Release]
+    }
+
+    method Enter {} { # private
+	lassign [$self Find] cmd item
+	if {$cmd ne ""} {
+	    set lastFill [$canvas itemcget $item -fill]
+	    set lastCmd $cmd
+	    $canvas itemconfigure $item -fill orange
+	}
+    }
+
+    method Leave {} { # private
+	lassign [$self Find] cmd item
+	if {$cmd eq $lastCmd} {
+	    $canvas itemconfigure $item -fill $lastFill
+	    lassign {"" ""} lastFill lastCmd
+	}
+    }
+
+    method Release {} { # private
+	lassign [$self Find] cmd item
+	if {$cmd eq $lastCmd} {
+	    $canvas itemconfigure $item -fill orange
+	    if {$cmd eq "center"} {
+		{*}$command {G1 X0 Y0 F$xyspeed ; Move to center}
+	    } elseif {[regexp {z/(.*)} $cmd matched dist]}  {
+		{*}$command [format {G91 ; Relative\nG1 Z%.3f F$zspeed ; Relative move Z %.3fmm\nG90 ; Absolute} $dist $dist]
+	    }  elseif {[regexp {(.*)/(.*)} $cmd matched angle dist]}  {
+		set pi [expr {atan(1) * 4}]
+		set x [expr {$dist * cos($pi * $angle / 180.0)}]
+		set y [expr {$dist * sin($pi * $angle / 180.0)}]
+		{*}$command [format {G91 ; Relative\nG1 X%.3f Y%.3f F$xyspeed ; Move %d° %.3fmm\nG90 ; Absolute} $x $y $angle $dist]
+	    }
+	}
+    }
+
+    method Press {} { # private
+	lassign [$self Find] cmd item
+	if {$cmd eq $lastCmd} {
+	    $canvas itemconfigure $item -fill red
+	}
+    }
+
+    method Find {} { # private
+	foreach tag [$canvas itemcget current -tags] {
+	    if {[regexp {(cmd/.*)} $tag matched cmd]} {
+		return [list [string range $tag 4 end] [$canvas find withtag "$tag&&frame"]]
+	    }
+	}
+	return {}
+    }
+}
+
+snit::widget spider {
+    hulltype ttk::frame
+    option -printer
+    option -command
+
+    variable command
+    variable armRadiusSafety 20
+    variable armRadiusRing  20
+    variable zStep   20
+    variable width   250
+    variable height  220
+    variable canvas
+    variable printer
+    variable path {}
+    variable lastZ 0
+    variable h
+    variable xCenter
+    variable yCenter
+    variable mouseX 0
+    variable mouseY 0
+    variable last ""
+    variable color -array {
+	90  green
+	210 blue
+	330 red
+    }
+
+    constructor {args} {
+	$self configurelist $args
+
+	set printer $options(-printer)
+	set command $options(-command)
+
+	set canvas $win.canvas
+	canvas $canvas -width $width -height $height
+	pack $canvas
+
+	set h [expr {$height - 1}]
+	set xCenter [expr {$width - $h / 2}]
+	set yCenter [expr {$h / 2 + 2}]
+
+	$canvas bind button <ButtonPress-1> [list $self Press %x %y]
+	$canvas bind button <ButtonRelease-1> [list $self Release %x %y]
+
+	foreach event {Enter Leave Motion B1-Motion} {
+	    $canvas bind button <$event> [list $self UpdateMouse %x %y]
+	}
+
+	every 250 $self Update
+    }
+
+    method Update {} { # private
+	set armRadius [expr {[$printer status armRadius -default 120] - $armRadiusSafety}]
+	set zMax [$printer status zMax -default 200]
+	set x [expr {$xCenter + $h/2 * [$printer status x -default 0] / $armRadius}]
+	set y [expr {$yCenter - $h/2 * [$printer status y -default 0] / $armRadius}]
+	set z [$printer status z -default $zMax]
+	set zPixel [expr {$h - $h * $z / $zMax + 1}]
+
+	$self DrawBackground $armRadius $zMax
+	$self DrawPath $x $y $z
+	$self DrawLine {level button} [list 2 $zPixel [expr {$width - $h - 5}] $zPixel] -width 3 -fill DeepPink4
+	$self DrawArm arm $x $y
+
+	foreach tag {path line arm level mouse label} {
+	    $canvas raise $tag
+	}
+    }
+
+    method DrawPath {x y z} { # private
+	if {$lastZ != $z} {
+	    $canvas delete path
+	    set path {}
+	    set lastZ $z
+	}
+
+	if {[llength $path] > 0} {
+	    lassign [lindex $path end-1 end] lastX lastY
+	    if {$x != $lastX || $y != $lastY} {
+		lappend path $x $y
+		$self DrawLine path $path -fill "dark orange"
+	    }
+	} else {
+	    lappend path $x $y
+	}
+    }
+
+    method DrawBackground {armRadius zMax} { # private
+	$canvas delete bg
+
+	$canvas create oval [expr {$xCenter - $h/2}] [expr {$yCenter - $h/2}] [expr {$xCenter + $h/2}] [expr {$yCenter + $h/2}] -fill white -tags {bg button}
+	$canvas create line $xCenter [expr {$yCenter - $h / 2}] $xCenter [expr {$yCenter + $h / 2}] -tags {bg button} -fill gray
+	$canvas create line [expr {$xCenter - $h / 2}] $yCenter [expr {$xCenter + $h / 2}] $yCenter -tags {bg button} -fill gray
+
+	for {set radius $armRadiusRing} {$radius <= $armRadius} {incr radius $armRadiusRing} {
+	    set r [expr {$radius * $h / (2 * $armRadius)}]
+	    if {$radius < $armRadius - $armRadiusRing / 3} {
+		$canvas create oval [expr {$xCenter - $r}] [expr {$yCenter - $r}] [expr {$xCenter + $r}] [expr {$yCenter + $r}] -tags {bg button}
+	    }
+	    $canvas create text $xCenter [expr {$yCenter - $r + $armRadiusRing * $h / (4 * $armRadius)}] -text [expr {$radius / 10}] -tags {bg button label} -font {-size 6}
+	}
+
+	$canvas create rectangle 1 1 [expr {$width - $h - 5}] $height -fill white -tags {bg button}
+	for {set z $zStep} {$z <= $zMax} {incr z $zStep} {
+	    set zPixel [expr {$h - $h * $z / $zMax + 1}]
+	    if {$z < $zMax - $zStep / 3} {
+		$canvas create line 1 $zPixel [expr {$width - $h - 5}] $zPixel -fill black -tags {bg button}
+	    }
+	    $canvas create text [expr {($width - $h - 5) / 2}] [expr {$zPixel + $zStep * $h / (2 * $zMax)}] -text [expr {$z / 10}] -tags {bg button label} -font {-size 6}
+	}
+    }
+
+    method DrawLine {tags coords args} { # private
+	if {[$canvas gettags [set id [lindex $tags 0]]] ne ""} {
+	    $canvas coords $id {*}$coords
+	} else {
+	    $canvas create line {*}$coords -tags $tags {*}$args
+	}
+    }
+
+    method DrawArm {tags x y args} { # private
+	for {set angle 90} {$angle < 360} {incr angle 120} {
+	    set pi [expr {atan(1) * 4}]
+	    set id "[lindex $tags 0]$angle"
+	    $self DrawLine [list $id {*}$tags button] \
+		[list $x $y \
+		     [expr {$xCenter + $h/2 * cos($pi * $angle / 180.0)}] \
+		     [expr {$yCenter - $h/2 * sin($pi * $angle / 180.0)}]] \
+		-width 2 -fill $color($angle) {*}$args
+	}
+    }
+
+    method Press {x y} { # private
+	$canvas itemconfigure mouse -fill red -dash 255
+
+	set last ""
+	if {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2} {
+	    set last xy
+	} elseif {$x < $width - $h - 5} {
+	    set last z
+	}
+    }
+
+    method Release {x y} { # private
+	if {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2 && $last eq "xy"} {
+	    set armRadius [expr {[$printer status armRadius -default 120] - $armRadiusSafety}]
+	    set xPos [expr {$armRadius * ($x - $xCenter) / ($h / 2)}]
+	    set yPos [expr {-$armRadius * ($y - $yCenter) / ($h / 2)}]
+	    {*}$command [format {G1 X%.3f Y%.3f F$xyspeed ; Absolute move} $xPos $yPos]
+	} elseif {$x < $width - $h - 5 && $last eq "z"}  {
+	    set zMax [$printer status zMax -default 200]
+	    set zPos [expr {max(0, min($zMax, $zMax * ($h - $y) / $h))}]
+	    {*}$command [format {G1 Z%.3f F$xyspeed ; Absolute move} $zPos]
+	}
+	set last ""
+	$canvas delete mouse
+	$self UpdateMouse $x $y 1
+    }
+
+    method UpdateMouse {x y {force 0}} { # private
+	if {$x != $mouseX || $y != $mouseY || $force} {
+	    if {$x < $width - $h - 5} {
+		$self DrawLine {mouse button} [list 2 $y [expr {$width - $h - 5}] $y] -width 3 -fill DeepPink4 -dash {2 4}
+	    } elseif {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2} {
+		$self DrawArm mouse $x $y -dash {2 4}
+	    } else {
+		$canvas delete mouse
+	    }
+	    set mouseX $x
+	    set mouseY $y
+	}
+    }
+}
+
+snit::widget motion {
+    hulltype ttk::labelframe
+    option -connection
+    option -printer
+    variable zspeed 5000
+    variable xyspeed 5000
+
+    constructor {args} {
+	$self configurelist $args
+
+ 	$hull configure -text "Motion"
+
+	set conn $options(-connection)
+
+	ttk::frame  $win.0
+	ttk::button $win.0.home      -text "Home"           -width 4 -command [list $conn command $selfns {G28 ; Home}]
+	ttk::button $win.0.bedcenter -text "Bed center"     -command [list $conn command $selfns {G1 X0 Y0 Z0 F$xyspeed ; Move to center of bed}]
+	ttk::button $win.0.motoron   -text "Motors on"      -command [list $conn command $selfns {M17 ; Motors on}]
+	ttk::button $win.0.bed       -text "Bed"            -width 3 -command [list $conn command $selfns {G1 Z0 F$zspeed ; Move to bed}]
+	ttk::button $win.0.abovebed  -text "10cm above bed" -command [list $conn command $selfns {G1 X0 Y0 Z100 F$zspeed ; Move 10cm above bed}]
+	ttk::button $win.0.motoroff  -text "Motors off"     -command [list $conn command $selfns {M18 ; Motors off}]
+	grid $win.0.home $win.0.bedcenter $win.0.motoron  -sticky news
+	grid $win.0.bed  $win.0.abovebed  $win.0.motoroff -sticky news
+
+	calibration $win.calibration -connection $conn
+
+	compass $win.compass -command [list $conn command $selfns]
+	spider $win.spider -printer $options(-printer) -command [list $conn command $selfns]
+
+	ttk::frame   $win.1
+	ttk::label   $win.1.zl1 -text "z:"
+	ttk::spinbox $win.1.zs  -from 100 -to 5000 -increment 100 -width 5 -validate all -validatecommand {string is integer %P} -textvariable [myvar zspeed]
+	ttk::label   $win.1.zl2 -text "mm/    \nmin" -font {-size 6} -anchor w
+	ttk::label   $win.1.xyl1 -text "xy:" -width 5 -anchor e
+	ttk::spinbox $win.1.xys -from 100 -to 5000 -increment 100 -width 5 -validate all -validatecommand {string is integer %P} -textvariable [myvar xyspeed]
+
+	ttk::label  $win.1.xyl2 -text "mm/    \nmin" -font {-size 6} -anchor w
+	pack $win.1.zl1 $win.1.zs $win.1.zl2 $win.1.xyl1 $win.1.xys $win.1.xyl2 -side left
+
+	pack $win.0 $win.calibration $win.compass $win.spider $win.1 -fill x
+    }
+}
+
+snit::widget timeplot {
+    hulltype ttk::frame
+
+    option -width 270
+    option -height 100
+    option -timedomain 120
+    option -timetick 15
+    option -yticks 5
+    option -title
+
+    variable canvas
+    variable width
+    variable height
+    variable timedomain
+    variable timetick
+    variable yticks
+    variable values -array {}
+    variable vars -array {}
+
+    constructor {args} {
+	$self configurelist $args
+
+	foreach var {height width timedomain timetick yticks} {
+	    set $var $options(-$var)
+	}
+
+	if {$options(-title) ne ""} {
+	    ttk::label $win.title -text $options(-title) -font {-size 8}
+	}
+
+	set canvas $win.canvas
+	canvas $canvas -width $width -height $height -bg white -borderwidth 1 -relief sunken
+	ttk::frame $win.legend
+	pack $win.title $canvas -fill both
+	pack $win.legend -fill x
+
+	every 250 $self Update
+    }
+
+    method add {var l s} {
+	set col [expr {[array size vars] % 2}]
+	set row [expr {[array size vars] / 2}]
+	set vars($var) $s
+	canvas $win.legend.line$var -width 15 -height 10
+	$win.legend.line$var create line 1 5 15 5 {*}$s
+	ttk::label $win.legend.label$var -text "$l " -font {-size 6}
+	grid $win.legend.line$var -row $row -column [expr {2 * $col}]
+	grid $win.legend.label$var -row $row -column [expr {2 * $col + 1}]
+    }
+
+    method Update {} { # private
+	set timeEnd [expr {[clock milliseconds] * 0.001}]
+	set timeStart [expr {$timeEnd - $timedomain}]
+
+	lassign {1e9 -1e9} ymin ymax
+	foreach var [array names vars] {
+	    if {![info exists $var]} {
+		continue
+	    }
+
+	    if {![info exists values($var)]} {
+		set values($var) {}
+	    }
+
+	    # add new value
+	    lappend values($var) $timeEnd [set y [set $var]]
+
+	    # remove obsolete values
+	    set i -1
+	    foreach {t y} $values($var) {
+		if {$t > $timeStart} {
+		    if {$i > 0} {
+			set values($var) [lreplace $values($var) 0 $i]
+		    }
+		    break
+		}
+		incr i 2
+	    }
+
+	    # find range
+	    foreach {t y} $values($var) {
+		if {$y < $ymin} { set ymin $y }
+		if {$y > $ymax} { set ymax $y }
+	    }
+	}
+
+	if {$ymin >= $ymax} {
+	    # empty range
+	    lassign {-1.0 1.0} ymin ymax
+	} else {
+	    # always include 0
+	    if {$ymin > 0} { set ymin 0 }
+	    if {$ymax < 0} { set ymax 0 }
+	}
+
+	# dimension - power of 10
+	set max [expr {max(abs($ymin), abs($ymax))}]
+	set dim [expr {log10($max)}]
+	set dim [expr {10 ** (int($dim) + ($dim - int($dim) > log10(5) ? 1 : 0))}]
+
+	# min and max are multiple of dimension
+	set ytickMin [expr {$dim * floor(double($ymin) / $dim)}]
+	set ytickMax [expr {$dim * ceil(double($ymax) / $dim)}]
+	set ytickDelta [expr {$ytickMax - $ytickMin}]
+
+	# todo hack determine nice divisor of ytickDelta
+	set ticks {}
+	for {set i [expr {int(round(0.5 * $yticks))}]} {$i <= int(round(1.5 * $yticks))} {incr i} {
+	    lappend ticks [list $i [expr {(int(ceil(100 * $ytickDelta / $dim)) % $i == 0) +
+					  (int(ceil(100 * $ytickMax / $dim)) % (int(ceil(100 * $ytickDelta / $dim)) / $i) == 0) +
+					  (int(ceil(100 * $ytickMin / $dim)) % (int(ceil(100 * $ytickDelta / $dim)) / $i) == 0) -
+				          0.1 * abs($yticks - $i)}]]
+	}
+	set ticks [lindex [lsort -real -index 1 $ticks] end 0]
+
+	# add offset
+	set ydelta [expr {$ymax - $ymin}]
+	set ymin [expr {$ymin - $ydelta / 8.0}]
+	set ymax [expr {$ymax + $ydelta / 8.0}]
+	set ydelta [expr {$ymax - $ymin}]
+
+	set yscale [expr {double($height) / $ydelta}]
+	set tscale [expr {double($width) / $timedomain}]
+
+	# draw grid
+	$canvas delete grid
+	for {set t [expr {$timeStart + $timetick}]} {$t < $timeEnd} {set t [expr {$t + $timetick}]} {
+	    set x [expr {($t - $timeStart) * $tscale + 5}]
+	    $canvas create line $x 0 $x $height -tags grid -fill gray
+	    $canvas create text $x [expr {$height - 4}] -text "[expr {int($timeEnd - $t)}]s" -font {-size 6} -tags {grid label}
+	}
+
+	# draw other lines
+	for {set i -1} {$i <= $ticks + 1} {incr i} { # hack -1 +1 because of added offset
+	    set val [expr {$ytickMin + $i * ($ytickMax - $ytickMin) / $ticks}]
+	    set y [expr {$height - ($val - $ymin) * $yscale}]
+	    $canvas create line 0 $y $width $y -tags grid -fill gray
+
+	    if {$y > 5 && $y < $height - 5} {
+		$canvas create text 15 $y -text [format "%.1f" $val] -tags {grid label} -font {-size 6}
+	    }
+	}
+
+	# draw curves
+	$canvas delete curve
+	foreach {var vals} [array get values] {
+	    set line {}
+	    foreach {t y} $vals {
+		lappend line [expr {int(($t - $timeStart) * $tscale)}] [expr {$height - int(($y - $ymin) * $yscale)}]
+	    }
+	    if {[llength $line] >= 4} {
+		$canvas create line {*}$line -tags curve {*}$vars($var)
+	    }
+	}
+
+	$canvas raise label
+    }
+}
+
+snit::widget temperature {
+    hulltype ttk::labelframe
+    option -printer
+    option -connection
+    variable hotendTargetTemp 0
+    variable bedTargetTemp 0
+
+    constructor {args} {
+	$self configurelist $args
+
+	set conn $options(-connection)
+
+	$hull configure -text "Temperature"
+
+	timeplot $win.tempPlot -title "Temperature (°C)"
+	timeplot $win.tempDeltaPlot -title "Temperature deviation (°C)"
+	timeplot $win.heaterPlot -title "Heater PWM"
+
+	ttk::frame $win.0
+	ttk::label  $win.0.hotend1 -text "Hotend:"
+	ttk::spinbox $win.0.hotendTargetTemp -from 0 -to 250 -increment 5 -width 3 -validate all -validatecommand {string is double %P} -textvariable [myvar hotendTargetTemp]
+	ttk::label  $win.0.hotend2 -text "°C  " -anchor w
+	ttk::button $win.0.hotendSet -text "Set" -width 3 -command [list $conn command $selfns {M104 S$hotendTargetTemp ; Set hotend temperature}]
+
+	ttk::label  $win.0.bed1 -text "Bed:"
+	ttk::spinbox $win.0.bedTargetTemp -from 0 -to 150 -increment 5 -width 3 -validate all -validatecommand {string is double %P} -textvariable [myvar bedTargetTemp]
+	ttk::label  $win.0.bed2 -text "°C  " -anchor w
+	ttk::button $win.0.bedSet -text "Set" -width 3 -command [list $conn command $selfns {M140 S$bedTargetTemp ; Set bed temperature}]
+
+	grid $win.0.hotend1 $win.0.hotendTargetTemp $win.0.hotend2 $win.0.hotendSet -sticky news
+	grid $win.0.bed1 $win.0.bedTargetTemp $win.0.bed2 $win.0.bedSet -sticky news
+	pack $win.tempPlot $win.tempDeltaPlot $win.heaterPlot $win.0
+
+	set printer $options(-printer)
+	foreach {var style} {bedTemp {-fill blue} bedTargetTemp {-fill blue -dash {2 2}} hotendTemp {-fill red} hotendTargetTemp {-fill red -dash {2 2}}} {
+	    $win.tempPlot add [$printer statusvar $var] [printer statuslegend $var] $style
+	}
+	foreach {var style} {bedDeltaTemp {-fill blue} hotendDeltaTemp {-fill red}} {
+	    $win.tempDeltaPlot add [$printer statusvar $var] [printer statuslegend $var] $style
+	}
+	foreach {var style} {bedHeater {-fill blue} hotendHeater {-fill red}} {
+	    $win.heaterPlot add [$printer statusvar $var] [printer statuslegend $var] $style
+	}
+    }
+}
+
+snit::widget extruder {
+    hulltype ttk::labelframe
+    option -connection
+    variable length 10
+    variable speed 500
+
+    constructor {args} {
+	$self configurelist $args
+	set conn $options(-connection)
+
+        $hull configure -text "Extruder"
+
+	ttk::label  $win.speedl1 -text "Speed:"
+	ttk::label  $win.speedl2 -text "mm/       \nmin" -font {-size 6} -anchor w
+	ttk::spinbox $win.speed -from 60 -to 1000 -width 5 -increment 60 -validate all -validatecommand {string is integer %P} -textvariable [myvar speed]
+	ttk::button $win.extrude -text "Extrude" -command [list $conn command $selfns {M83 ; Relative\nG1 E$length F$speed ; Extrude\nM82 ; Absolute}]
+
+	ttk::label  $win.lengthl1 -text "Length:" -anchor w
+	ttk::label  $win.lengthl2 -text "mm    " -anchor w
+	ttk::spinbox $win.length -from 1 -to 3000 -width 5 -increment 10 -validate all -validatecommand {string is integer %P} -textvariable [myvar length]
+	ttk::button $win.retract -text "Retract" -command [list $conn command $selfns {M83 ; Relative\nG1 E-$length F$speed ; Retract\nM82 ; Absolute}]
+
+	grid $win.speedl1 $win.speed $win.speedl2 $win.extrude
+	grid $win.lengthl1 $win.length $win.lengthl2 $win.retract
+    }
+}
+
+snit::widget player {
+    hulltype ttk::labelframe
+
+    option -printer
+    option -connection
+    option -uploadconnection
+    variable conn
+    variable printer
+    variable speed 100
+
+    constructor {args} {
+	$self configurelist $args
+
+	$hull configure -text "Player"
+
+	set conn $options(-connection)
+	set printer $options(-printer)
+
+	ttk::frame $win.0
+	listbox $win.0.files -height 5 -listvariable [$printer statusvar files] -yscrollcommand [list $win.0.scroll set]
+	ttk::scrollbar $win.0.scroll -orient vertical -command [list $win.0.files yview]
+	autoscroll::autoscroll $win.0.scroll
+	pack $win.0.files -side left -fill both -expand 1
+	pack $win.0.scroll -side left -fill y
+
+	ttk::frame $win.1
+	foreach name {play resume pause abort delete} {
+	    ttk::button $win.1.$name -text [string totitle $name] -width [string length $name] -command [list $self [string totitle $name]]
+	}
+	ttk::button $win.1.upload -text "Upload" -width 6 -command [list $self Send "uploading" $options(-uploadconnection)]
+	ttk::button $win.1.send   -text "Send"   -width 4 -command [list $self Send "sending" $conn]
+
+	grid $win.1.play $win.1.resume $win.1.pause $win.1.abort -sticky news
+	grid $win.1.delete $win.1.upload $win.1.send -sticky news
+
+	ttk::frame $win.2
+	ttk::label   $win.2.speedl1 -text "Speed:"
+	ttk::label   $win.2.speedl2 -text "%"
+	ttk::spinbox $win.2.speed -from 1 -to 300 -increment 10 -width 4 -validate all -validatecommand {string is integer %P} -textvariable [myvar speed]
+	ttk::button  $win.2.set -width 3 -text "Set" -command [list $conn command $selfns {M220 S$speed ; Set speed percentage}]
+	pack $win.2.speedl1 $win.2.speed $win.2.speedl2 $win.2.set -side left
+
+	ttk::progressbar $win.progress -variable [$printer statusvar progress]
+
+	pack $win.0 -fill both
+	pack $win.1 $win.2 $win.progress -fill x
+
+	trace add variable [.printer statusvar mode] write [list $self ModeChanged]
+	$self ModeChanged
+    }
+
+    method Resume {} { # private
+	if {[info commands $win.sender] ne ""} {
+	    $conn print "Player: resume\n"
+	    $win.sender setRunning 1
+	} else {
+	    $conn send "M24 ; Resume"
+	}
+    }
+
+    method Pause {} { # private
+	if {[info commands $win.sender] ne ""} {
+	    $conn print "Player: pause\n"
+	    $win.sender setRunning 0
+	} else {
+	    $conn send "M25 ; Pause"
+	}
+    }
+
+    method Abort {} { # private
+	if {[info commands $win.sender] ne ""} {
+	    $conn print "Player: aborted\n"
+	    $win.sender destroy
+	} else {
+	    $conn send "M26 ; Abort"
+	}
+    }
+
+    method Play {} { # private
+	if {[set file [$win.0.files curselection]] eq ""} {
+	    $conn print "Player: No file selected\n" error
+	} else {
+	    $conn send "M32 [$win.0.files get $file] ; Play file"
+	    $printer status mode playing
+	}
+    }
+
+    method Delete {} { # private
+	if {[set file [$win.0.files curselection]] eq ""} {
+	    $conn print "Player: No file selected\n" error
+	} else {
+	    $conn send "M30 [$win.0.files get $file] ; Delete file"
+	    # todo update printer status immediately
+	}
+    }
+
+    method Send {mode c} { # private
+	catch {destroy $win.sender}
+	sender $win.sender -connection $c -printer $printer -mode $mode
+    }
+
+    method ModeChanged {args} { # private
+	set mode [$printer status mode]
+	foreach name {play delete upload send} {
+	    $win.1.$name configure -state [expr {($mode eq "idle" || $mode eq "uploading") ? "normal" : "disabled"}]
+	}
+	foreach name {resume pause abort} {
+	    $win.1.$name configure -state [expr {($mode eq "idle" || $mode eq "uploading") ? "disabled" : "normal"}]
+	}
+    }
+}
+
+snit::widget console {
+    option -connection
+    option -log
+    delegate method * to conn
+    variable conn
+    variable command
+    variable locked 0
+    variable log
+
+    constructor {args} {
+	$self configurelist $args
+
+	ttk::frame $win.0
+	text $win.0.output -width 50 -wrap word -font "Monospace 10" -yscrollcommand [list $win.0.scroll set]
+	ttk::scrollbar $win.0.scroll -orient vertical -command [list $win.0.output yview]
+	autoscroll::autoscroll $win.0.scroll
+	pack $win.0.output -side left -expand 1 -fill both
+	pack $win.0.scroll -side left -fill y
+
+	ttk::frame $win.1
+	ttk::entry $win.1.command -font "Monospace 12" -textvariable [myvar command]
+	history::init $win.1.command
+	bind $win.1.command <Key-Return> [list $self SendCommand]
+
+	ttk::checkbutton $win.1.locked -text "Locked" -variable [myvar locked]
+	pack $win.1.command -side left -expand 1 -fill x -padx 10 -pady 10
+	pack $win.1.locked -side left
+
+	pack $win.0 -fill both -expand 1
+	pack $win.1 -fill x
+
+	$win.0.output tag configure error -foreground red
+	$win.0.output tag configure comment -foreground gray
+	$win.0.output tag configure send -foreground blue -font "Monospace 12"
+	$win.0.output tag configure receive -foreground brown -font "Monospace 12"
+
+	$win.0.output configure -state disabled
+	focus $win.1.command
+
+	set conn $options(-connection)
+	$conn attach [list $self Event]
+
+	if {[set log $options(-log)] ne ""} {
+	    $self print "Logging to $log\n"
+	}
+    }
+
+    method command {ns cmd} {
+	$self send [namespace inscope $ns "subst \"$cmd\""]
+    }
+
+    method setLocked {l} {
+	set locked $l
+    }
+
+    method print {data {tag ""}} {
+	set state [$win.0.output cget -state]
+	$win.0.output configure -state normal
+	$win.0.output insert end $data $tag
+	$win.0.output configure -state $state
+	$win.0.output yview moveto 1
+
+	if {$log ne ""} {
+	    catch {
+		set fh [open $log a]
+		puts -nonewline $fh $data
+		close $fh
+	    }
+	}
+    }
+
+    method send {data {force 0}} {
+	set l [expr {$locked && !$force}]
+	set prefix [expr {$l ? "\u25B7" : "\u25B6"}]
+	foreach line [split $data "\n"] {
+	    if {[regexp {\A\s*([^;]+?)\s*;\s*(.+?)\s*\Z} $line match code comment]} {
+		$self print "$prefix $code\t\t\t\t\t" send
+		$self print "; $comment\n" comment
+	    } elseif {[regexp {\A\s*([^;]*?)\s*\Z} $line match code]} {
+		$self print "$prefix $code\n" send
+	    } elseif {[regexp {\A\s*;\s*(.+?)\s*\Z} $line match comment]} {
+		$self print "; $comment\n" comment
+	    }
+	}
+	if {$l} {
+	    $self print "Locked - not sending.\n" error
+	} else {
+	    if {[$conn connected]} {
+		$conn send $data
+	    } else {
+		$self print "Disconnected\n" error
+	    }
+	}
+    }
+
+    method SendCommand {} { # private
+	if {[set trimmed [string trim $command]] ne ""} {
+	    $self send $trimmed
+	    history::add $win.1.command $trimmed
+	    set command ""
+	}
+    }
+
+    method Event {c event data} { # private
+	if {$event eq "connect"} {
+	    $self print "Connected\n"
+	} elseif {$event eq "disconnect"} {
+	    $self print "Disconnected: $data\n" error
+	} elseif {$event eq "receive"} {
+	    # todo hack remove first prompt (smoothie specific #625)
+	    regsub -line {^>\s*} $data "" data
+	    regsub -all -line {^(.)} $data "\u25C0 \\1" data
+	    $self print $data receive
+	}
+    }
+}
+
+snit::widget printerstatus {
+    hulltype ttk::labelframe
+    option -printer
+
+    constructor {args} {
+	$self configurelist $args
+
+        $hull configure -text "Status"
+
+	foreach var {mode connected progress hotend bed position axis e} {
+	    set label [printer statuslegend $var]
+	    set unit ""
+	    regexp {\A(.*?)\s*\((.*?)\)\Z} $label matched label unit
+	    ttk::label $win.label$var -text $label: -anchor e
+	    ttk::frame $win.$var
+	    ttk::label $win.$var.value -textvariable [$options(-printer) statusvar $var] -anchor e
+	    ttk::label $win.$var.unit -text $unit -anchor w
+	    pack $win.$var.value $win.$var.unit -side left
+	    grid $win.label$var $win.$var -sticky news
+	}
+    }
+}
+
+snit::widget gcodelookup {
+    hulltype ttk::labelframe
+    option -command
+    variable filter
+    variable hidden -array {}
+
+    variable gcodes {
+        G0 "Move to the given coordinates. To the contrary of G1, if there is a tool it will most of the time be off during this kind of move. This is a \"go to\" move rather than a \"do while going to\" move. The F parameter defines speed and is remembered by subsequent commands ( specified in millimetres/minute ) (command is modal)" "G0 X10 Y-5 F100"
+        G1 "Move to the given coordinates, see above for difference with G0. Takes the same F parameter as G0. (command is modal)" "G1 X20 Y-2.3 F200"
+        G10 "Do firmware extruder retract" "G10"
+        G11 "Do firmware extruder un-retract" "G11"
+        G17 "Select XYZ plane (command is modal)" "G17"
+        G18 "Select XZY plane (command is modal)" "G18"
+        G19 "Select YZX plane (command is modal)" "G19"
+        G2 "Clockwise circular motion : go to point with coordinates XYZ while rotating around point with relative coordinates IJ (command is not modal)" "G2 X10 J5"
+        G20 "Inch mode : passed coordinates will be considered as Inches, so internally translated to millimeters (command is modal)" "G20"
+        G21 "Millimeter mode ( default ) : passed coordinates will be considered as millimeters (command is modal)" "G21"
+        G28 "Home The given axis, or if no axis specified home all axis at the same time (edge)" "G28"
+        G3 "Counter-clockwise motion : see above (command is not modal)" "G3 Y5 X10 I2"
+        G30 "Simple Z probe at current XY, reports distance moved down until probe triggers, optional F parameter sets feedrate" "G30 - G30 F100"
+        G31 "Report current Z probe status" "G31"
+        G32 "Uses Z probe to calibrate delta endstops and arm radius, use R parameter to select only arm radius calibration and E to select only endstop calibration. I to set target precision, J to set probe_radius, K to keep current endstop trim settings" "G32 - G32 R - G32 E - G32 EK - G32 I0.02"
+        G4 "Dwell S<seconds> or P<milliseconds>" "G4 P1000"
+        G90 "Absolute mode ( default ) : passed coordinates will be considered absolute ( relative to 0.0.0 ) (command is modal)" "G90"
+        G91 "Relative mode : passed coordinates will be considered relative to the current point (command is modal)" "G91"
+        G92 "Set current position to specified coordinates" "G92 X0 Y0 Z0"
+        M104 "Set Extruder Temperature - S<temperature>" "M104 S190"
+        M105 "Read current temp" "M105"
+        M106 "Turn fan ON" "M106"
+        M107 "Turn fan OFF" "M107"
+        M109 "Set Extruder Temperature and Wait - S<temperature>" "M109 S190"
+        M110 "Set current line number -N<line number>" "M110 N123"
+        M112 "Halt all operations, turn off heaters, go into Halt state" "M112"
+        M114 "Show current position of all axes, XYZ will be the last requested position, whereas ABC is actual current position of the actuators" "M114"
+        M117 "Display message on LCD, blank message will clear it" "M117 hello world or M117"
+        M119 "Show limit switch status" "M119"
+        M120 "\"Push\" the current feed-rate and seek-rate so that another one can be temporarily used, then the current one can be restored" "M120"
+        M121 "\"Pop\" the current feed-rate and seek-rate, see M120" "M121"
+        M140 "Set Bed Temperature - S<temperature>" "M140 S55"
+        M17 "Enable stepper motors" "M17"
+        M18 "Disable stepper motors" "M18"
+        M190 "Set Bed Temperature and Wait - S<temperature>" "M190 S55"
+        M20 "List SD card files" "M20"
+        M200 "Set E units for volumetric extrusion - D<filament diameter> set to 0 to disable volumetric extrusion" "M200 D3.0"
+        M203 "Set maximum feedrate your machine can sustain <mm/sec>" "M203 X100 Y100 Z100 E10"
+        M204 "S<acceleration> Set acceleration in mm/sec^2 Z<acceleration> NB Z only applies to Z only moves E<nnn> Set extruder only move acceleration" "M204 S1000 Z100 E500"
+        M205 "X<junction deviation> Z<z junction deviation> S<minimum planner speed>, Z junction deviation only applies to z only moves, 0 disables junction deviation for Z, -1 uses global junction deviation" "M205 X0.05 S30.0"
+        M206 "Set homing offsets" "M206 X10 Y3 Z0.5"
+        M207 "set retract length S\[positive mm\] F\[feedrate mm/min\] Z\[additional zlift/hop\] Q\[zlift feedrate mm/min\]" "M207 S4 F30 Z1"
+        M208 "set retract recover length S\[positive mm surplus to the M207 S*\] F\[feedrate mm/min\]" "M208 S0 F8"
+        M21 "Initialize the SD card. This does nothing in Smoothie but is kept for compatibility" "M21"
+        M220 "S<factor in percent>- set speed factor override percentage" "M220 S50"
+        M221 "S<flow rate factor in percent>- set flow rate factor override percentage for current extruder" "M221 S50"
+        M23 "Select a file" "M23 file.gcode"
+        M24 "Start or resume SD card print" "M24"
+        M25 "Pause SD card print" "M25"
+        M26 "Abort a SD card print" "M26"
+        M27 "Report print progress" "M27"
+        M28 "Begin write to SD card" "M28 file.gcode"
+        M3 "Starts the spindle. The S parameter sets the speed in rotations per minute" "M3 S5000"
+        M30 "Delete a file on the SD card" "M30 file.gcode"
+        M301 "Edit temperature control PID parameters" "M301 S0 P30 I10 D10"
+        M303 "Begin PID auto-tune cycle E<hotendid> S<temperature>" "M303 E0 S185 - Tune extruder - M303 E1 S100 - Tune printbed -"
+        M304 "Abort PID auto-tuning" "M304"
+        M305 "Set parameters for the thermistor, where B is beta, R is r0 and X is t0" "M305 B4066"
+        M306 "Set homing offsets based on current position, subtracts current position from homing offset for specified axis" "M306 Z0"
+        M32 "Select a file, and start playing it" "M32 file.gcode"
+        M360 "Scara Morgan: Move to Theta 0 degree position" "M360 or M360 P0"
+        M361 "Scara Morgan: Move to Theta 90 degree position" "M361 or M360 P0"
+        M364 "Scara Morgan: M364: Move to Psi + Theta 90 degree position" "M364 or M344 P0"
+        M370 "Z grid strategy: clears the ZGrid and the bed leveling is disabled until G32 is run again" "M370"
+        M371 "Z grid strategy: moves the head to the next calibration postion without saving for manual calibration" "M371"
+        M372 "Z grid strategy: move the head to the next calibration postion after saving the current probe point to memory - manual calbration" "M372"
+        M373 "Z grid strategy: completes calibration and enables the Z compensation grid" "M373"
+        M374 "Z grid strategy: save calibration grid" "M374"
+        M375 "Z grid strategy: load calibration grid" "M375"
+        M400 "Wait for the queue to be empty before answering \"OK\"" "M400"
+        M5 "Stops the spindle" "M5"
+        M500 "Save some volatile settings to an override file" "M500"
+        M501 "Load config-override file optionally specifying the extension" "M501 - loads config-override, M501 test1 - loads config-override.test1"
+        M502 "Delete the override file, reverting to config settings at next reset" "M502"
+        M503 "Display overridden settings if any" "M503"
+        M504 "Save the settings to an override file with specified extension" "M504 test1 - saves to config-override.test1"
+        M557 "Defines probe points" "M557 P1 X30 Y40.5"
+        M561 "clears the plane and the bed leveling is disabled until G32 is run again" "M561"
+        M565 "defines the probe offsets from the nozzle or tool head" "M565 X3 Y4.5 Z-2.37"
+        M600 "Suspend print in progress (use console command resume to continue)" "M600"
+        M665 "Set arm solution specific settings: Delta - L<arm length> R<arm radius> Z<max height>" "M665 L341.0 R350 Z430"
+        M666 "On a delta sets trim values for the endstops. (Positive values will crash physical endstops.)" "M666 X-0.1 Y-0.2 Z-0.3"
+        M82 "Set absolute mode for extruder only" "M82"
+        M83 "Set relative mode for extruder only" "M83"
+        M84 "Disable steppers" "M84"
+        M907 "Set Current control for each axis" "M907 X1.0 Y1.0 Z1.0 E1.5"
+        M910 "Move a given number of steps, without acceleration ( for testing only )" "M910 X100 F100"
+        M92 "Set axis steps per mm" "M92 E200"
+        M957 "(with Spindle module enabled) Report the current spindle speed and PWM value" "M957"
+        M958 "(with Spindle module enabled) Report the current spindle PID parameters. M958 Px.xx Ix.xx Dx.xx will set them (to save the new values, you need to edit config file manually)." "M958 P0.1"
+        M999 "Reset from a halted state caused by limit switch, M112 or kill switch" "M999"
+    }
+
+    constructor {args} {
+	$self configurelist $args
+
+	$hull configure -text "G-Code lookup"
+
+	ttk::entry $win.filter -textvariable [myvar filter]
+	tablelist::tablelist $win.codes -columns {0 "Code" 0 "Description"} -stretch all -background white -spacing 12 -showlabels 0
+
+	$win.codes columnconfigure 0 -font {-size 8 -weight bold}
+	$win.codes columnconfigure 1 -wrap 1 -maxwidth 15 -font {-size 8}
+
+	set i 0
+	foreach {code desc example} $gcodes {
+	    if {$code ne $example} {
+		set desc "$desc\n\nExample: $example"
+	    }
+	    $win.codes insert end [list $code $desc]
+	    set hidden($i) 0
+	    incr i
+	}
+
+	pack $win.filter $win.codes -fill both -expand 1 -side top
+
+	trace add variable filter write [list $self Filter]
+
+	bind [$win.codes bodytag] <Double-Button-1> [list $self DoubleClick %W %x %y]
+    }
+
+    method DoubleClick {w x y} { # private
+	lassign [tablelist::convEventFields $w $x $y] w x y
+	scan [$win.codes containingcell $x $y] "%d,%d" row col
+	if {$row >= 0 && $col >= 0} {
+	    set example [lindex $gcodes [expr {3 * $row + 2}]]
+	    set command $options(-command)
+	    set [$command cget -textvariable] $example
+	    focus $command
+	    $command icursor [string length $example]
+	}
+    }
+
+    method Filter {args} { # private
+	set i 0
+	set toggle {}
+	set f "*$filter*"
+	foreach {code desc example} $gcodes {
+	    if {[string match -nocase $f $code] ||
+		[string match -nocase $f $desc] ||
+		[string match -nocase $f $example]} {
+		if {$hidden($i)} {
+		    lappend toggle $i
+		    set hidden($i) 0
+		}
+	    } else {
+		if {!$hidden($i)} {
+		    lappend toggle $i
+		    set hidden($i) 1
+		}
+	    }
+	    incr i
+	}
+	$win.codes togglerowhide $toggle
+    }
+}
+
+if {$argc != 1} {
+    puts "usage: $argv0 host\[:port\]\n       $argv0 /dev/ttyACM0\n"
+    exit 1
+}
+
+gcodequeue .conn -connection [connection %AUTO% -address [lindex $argv 0]]
+printer .printer -connection .conn
+
+set title "3\u0394 Printer Control - $argv"
+wm title . $title
+
+ttk::panedwindow .pane -orient horizontal
+pack .pane -expand 1 -fill both
+
+ttk::frame .pane.left
+.pane add .pane.left -weight 1
+
+ttk::label .pane.left.title -text $title -font {Courier 20 bold}
+
+set tmp [expr {[info exists ::env(TMP)] ? $::env(TMP) : "/tmp"}]
+console .pane.left.console -connection .conn -log "$tmp/3delta.log"
+trace add variable [.printer statusvar mode] write {apply {{args} {.pane.left.console setLocked [expr {[.printer status mode] ne "idle"}]}}}
+
+pack .pane.left.title -fill x
+pack .pane.left.console -fill both -expand 1
+
+ttk::frame .pane.right
+.pane add .pane.right
+
+ttk::frame .pane.right.0
+printerstatus .pane.right.0.status -printer .printer
+temperature .pane.right.0.temperature -printer .printer -connection .pane.left.console
+pack .pane.right.0.status .pane.right.0.temperature -fill both
+
+ttk::frame .pane.right.1
+motion .pane.right.1.motion -connection .pane.left.console -printer .printer
+extruder .pane.right.1.extruder -connection .pane.left.console
+pack .pane.right.1.motion .pane.right.1.extruder -fill both
+
+ttk::frame .pane.right.2
+gcodelookup .pane.right.2.lookup -command .pane.left.console.1.command
+player .pane.right.2.player -connection .pane.left.console -printer .printer -uploadconnection .conn
+pack .pane.right.2.lookup .pane.right.2.player -fill both
+
+pack .pane.right.0 .pane.right.1 .pane.right.2 -fill both -side left
