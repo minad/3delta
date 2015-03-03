@@ -6,7 +6,7 @@ it brings additional motion control better suited to non-cartesian delta printer
 List of features:
 
 * GCode console
-* Connection via serial and telnet
+* Connection via serial port or telnet
 * Plots for temperature, temperature deviation and heater PWM
 * Relative and absolute motion control especially suited for delta printers
 * Calibration assistance for delta printers
@@ -32,6 +32,8 @@ Then start it with
 $ ./3delta 192.168.1.x
 $ ./3delta /dev/ttyACM0
 ~~~
+
+to access your printer either via telnet or via a serial port.
 
 ## Disclaimer
 
