@@ -44,4 +44,4 @@ I would appreciate patches which make this work with other firmwares.
 
 In principle 3delta should work also under Mac and Windows when the current Tcl/Tk packages are installed. However I didn't test it.
 
-![MOST-Delta](mostdelta.png)
+![MOST-Delta](mostdelta.jpg)
