@@ -35,7 +35,10 @@ $ ./3delta /dev/ttyACM0
 
 ## Disclaimer
 
-In principle 3delta should work also under Mac and Windows when the current Tcl/Tk packages are installed. However I didn't test it.
+This is very new software! I am using it, but I cannot guarantee that it works for you. But I am happy to help if it doesn't :)
 
 I am currently using [Smoothieware](https://github.com/Smoothieware/Smoothieware) as firmware. Some features might not work with other firmwares since the output format sometimes differs.
-I would also appreciate patches which make this work with other firmwares.
+I would appreciate patches which make this work with other firmwares.
+
+In principle 3delta should work also under Mac and Windows when the current Tcl/Tk packages are installed. However I didn't test it.
+
