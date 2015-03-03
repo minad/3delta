@@ -37,10 +37,11 @@ to access your printer either via telnet or via a serial port.
 
 ## Disclaimer
 
-This is very new software! I am using it, but I cannot guarantee that it works for you. But I am happy to help if it doesn't :)
+This is very new software! I am using it  for my [MOST-Delta](http://www.appropedia.org/Delta_Build_Overview:MOST) (see also [github](https://github.com/mtu-most/most-delta)), but I cannot guarantee that it works for you. But I am happy to help if it doesn't :)
 
 I am currently using [Smoothieware](https://github.com/Smoothieware/Smoothieware) as firmware. Some features might not work with other firmwares since the output format sometimes differs.
 I would appreciate patches which make this work with other firmwares.
 
 In principle 3delta should work also under Mac and Windows when the current Tcl/Tk packages are installed. However I didn't test it.
 
+![MOST-Delta](mostdelta.png)
