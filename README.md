@@ -1,5 +1,7 @@
 # 3Δ Printer Control
 
+<img align="right" src="mostdelta.jpg">
+
 3Δ is a host software for 3d printers of the delta style. In many aspects it is similar to [Pronterface](https://github.com/kliment/Printrun). However
 it brings additional motion control better suited to non-cartesian delta printers.
 
@@ -43,5 +45,3 @@ I am currently using [Smoothieware](https://github.com/Smoothieware/Smoothieware
 I would appreciate patches which make this work with other firmwares.
 
 In principle 3delta should work also under Mac and Windows when the current Tcl/Tk packages are installed. However I didn't test it.
-
-![MOST-Delta](mostdelta.jpg)
