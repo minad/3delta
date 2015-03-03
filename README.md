@@ -20,7 +20,7 @@ This is how it looks:
 
 ## Installation
 
-Just download this one file `3delta` and make it executable. Besides that you need the following packages which are available under the usual Linux distributions
+Just download the file [`3delta`](https://raw.githubusercontent.com/minad/3delta/master/3delta) and make it executable. Besides that you need the following packages which are available under the usual Linux distributions
 
 ~~~
 apt-get install tcl8.5 tk8.5 tcllib tklib
