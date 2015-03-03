@@ -63,7 +63,7 @@ snit::type connection {
     }
 
     method queueSize {} {
-	return [expr [string match "sock*" "$fh"] ? 10 : 1]
+	return [expr {[string match "sock*" "$fh"] ? 10 : 1}]
     }
 
     method Good {} { # private
