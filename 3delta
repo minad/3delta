@@ -264,11 +264,21 @@ snit::type printer {
     variable status -array {
 	mode idle
     }
+
+    # new file list
     variable newFiles 0
 
+    # handle update delays
     variable fastSent 0
     variable slowSent 0
     variable queued 0
+
+    # progress estimator
+    variable lastProgress -1
+    variable lastTime -1
+    variable startTime -1
+    variable totalWindow {}
+    variable totalWindowSize 300
 
     typevariable statuslegend -array {
 	bedTemp          "Bed temp. (°C)"
@@ -283,6 +293,8 @@ snit::type printer {
 	axis             "Axis (mm)"
 	e                "Extruder (mm)"
 	progress         "Progress (%)"
+	totalTime        "Total"
+	remainingTime    "Remaining"
     }
 
     constructor {args} {
@@ -293,10 +305,7 @@ snit::type printer {
     }
 
     method status {name {value {}} args} {
-	if {"$value" eq "-default"} {
-	    return [expr {[info exists status($name)] ? $status($name) : $args}]
-	}
-	return [set status($name) {*}$value]
+	return [expr {"$value" eq "-default" ? ([info exists status($name)] ? $status($name) : $args) : [set status($name) {*}$value]}]
     }
 
     method statusvar {name} {
@@ -305,6 +314,30 @@ snit::type printer {
 
     typemethod statuslegend {var} {
 	return [expr {[info exists statuslegend($var)] ? $statuslegend($var) : [string totitle $var]}]
+    }
+
+    method setProgress {progress} {
+	if {$progress != $lastProgress} {
+	    if {$progress >= 0} {
+		set now [clock milliseconds]
+		if {$startTime <= 0} {
+		    set startTime $now
+		} else {
+		    set total [expr {100.0 * ($now - $lastTime) / ($progress - $lastProgress)}]
+		    set totalWindow [list {*}[expr {[llength $totalWindow] >= $totalWindowSize ? [lreplace $totalWindow 0 0] : $totalWindow}] $total]
+		    set totalTime [expr int(round(([join $totalWindow +]) / [llength $totalWindow].))]
+		    set status(totalTime)     [clock format [expr {int(round($totalTime / 1000))}] -format "%H:%M:%S"]
+		    set status(startTime)     [clock format [expr {int(round($startTime / 1000))}] -format "%H:%M:%S"]
+		    set status(endTime)       [clock format [expr {int(round(($startTime + $totalTime) / 1000))}] -format "%H:%M:%S"]
+		    set status(remainingTime) [clock format [expr {int(round(($startTime + $totalTime - $now) / 1000))}] -format "%H:%M:%S"]
+		}
+		set status(progress) [format "%.2f" $progress]
+		set lastTime $now
+	    } else {
+		lassign {"" "" "" "" 0 -1 -1} status(startTime) status(endTime) status(totalTime) status(remainingTime) status(progress) startTime lastTime
+	    }
+	    set lastProgress $progress
+	}
     }
 
     method Event {c event data} { # private
@@ -334,11 +367,13 @@ snit::type printer {
 	    if {$status(mode) eq "idle" || $status(mode) eq "playing"} {
 		set mode $status(mode)
 		if {[regexp -line -nocase {SD\s+printing\s+byte\s+(\d+)/(\d+)} $data matched printed total]} {
-		    set status(progress) [format "%.2f" [expr {(100.0 * $printed) / max(1, $total)}]]
 		    set mode [expr {$printed == 0 ? "idle" : "playing"}]
+		    $self setProgress [expr {(100.0 * $printed) / max(1, $total)}]
 	        } elseif {[regexp -nocase {Not.*playing} $data]} {
-		    lassign {0 idle} status(progress) mode
+		    set mode idle
+		    $self setProgress -1
 		}
+
 		if {$status(mode) ne $mode} {
 		    set status(mode) $mode
 		    set slowSent 0
@@ -438,6 +473,8 @@ snit::type sender {
 		}
 		$conn filterEnd
 		destroy .uploadprogress
+	    } else {
+		$printer setProgress -1
 	    }
 	    $printer status mode idle
 	    $conn detach [list $self Send]
@@ -458,7 +495,7 @@ snit::type sender {
 	    $conn send [lindex $data $sent] {*}[expr {$mode ne "uploading" ? {1} : {}}]
 	    incr sent
 	    if {$mode ne "uploading"} {
-		$printer status progress [expr {100 * $sent / [llength $data]}]
+		$printer setProgress [expr {100.0 * $sent / [llength $data]}]
 	    }
 	}
     }
@@ -1347,7 +1384,7 @@ snit::widget printerstatus {
 
         $hull configure -text "Status"
 
-	foreach var {mode connected progress hotend bed position axis e} {
+	foreach var {mode connected progress totalTime remainingTime hotend bed position axis e} {
 	    set label [printer statuslegend $var]
 	    set unit ""
 	    regexp {\A(.*?)\s*\((.*?)\)\Z} $label matched label unit
