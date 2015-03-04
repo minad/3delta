@@ -1110,7 +1110,8 @@ snit::widget player {
     option -uploadconnection
     variable conn
     variable printer
-    variable speed 100
+    variable flowspeed 100
+    variable feedspeed 100
 
     constructor {args} {
 	$self configurelist $args
@@ -1137,12 +1138,18 @@ snit::widget player {
 	grid $win.1.play $win.1.resume $win.1.pause $win.1.abort -sticky news
 	grid $win.1.delete $win.1.upload $win.1.send -sticky news
 
-	ttk::frame $win.2
-	ttk::label   $win.2.speedl1 -text "Speed:"
-	ttk::label   $win.2.speedl2 -text "%"
-	ttk::spinbox $win.2.speed -from 1 -to 300 -increment 10 -width 4 -validate all -validatecommand {string is integer %P} -textvariable [myvar speed]
-	ttk::button  $win.2.set -width 3 -text "Set" -command [list $conn command $selfns {M220 S$speed ; Set speed percentage}]
-	pack $win.2.speedl1 $win.2.speed $win.2.speedl2 $win.2.set -side left
+	ttk::frame   $win.2
+	ttk::label   $win.2.feedspeedl1 -text "Feed speed:"
+	ttk::spinbox $win.2.feedspeed -from 1 -to 300 -increment 10 -width 4 -validate all -validatecommand {string is integer %P} -textvariable [myvar feedspeed]
+	ttk::label   $win.2.feedspeedl2 -text "%"
+	ttk::button  $win.2.feedset -width 3 -text "Set" -command [list $conn command $selfns {M220 S$feedspeed ; Set feed speed}]
+	ttk::label   $win.2.flowspeedl1 -text "Flow speed:"
+	ttk::spinbox $win.2.flowspeed -from 1 -to 300 -increment 10 -width 4 -validate all -validatecommand {string is integer %P} -textvariable [myvar flowspeed]
+	ttk::label   $win.2.flowspeedl2 -text "%"
+	ttk::button  $win.2.flowset -width 3 -text "Set" -command [list $conn command $selfns {M221 S$flowspeed ; Set flow speed}]
+
+	grid $win.2.feedspeedl1 $win.2.feedspeed $win.2.feedspeedl2 $win.2.feedset -sticky news
+	grid $win.2.flowspeedl1 $win.2.flowspeed $win.2.flowspeedl2 $win.2.flowset -sticky news
 
 	ttk::progressbar $win.progress -variable [$printer statusvar progress]
 
@@ -1460,7 +1467,7 @@ snit::widget gcodelookup {
 	$hull configure -text "G-Code lookup"
 
 	ttk::entry $win.filter -textvariable [myvar filter]
-	tablelist::tablelist $win.codes -columns {0 "Code" 0 "Description"} -stretch all -background white -spacing 12 -showlabels 0
+	tablelist::tablelist $win.codes -columns {0 "Code" 0 "Description"} -stretch all -background white -spacing 12 -height 9 -showlabels 0
 
 	$win.codes columnconfigure 0 -font {-size 8 -weight bold}
 	$win.codes columnconfigure 1 -wrap 1 -maxwidth 15 -font {-size 8}
