@@ -274,11 +274,8 @@ snit::type printer {
     variable queued 0
 
     # progress estimator
-    variable lastProgress -1
-    variable lastTime -1
-    variable startTime -1
-    variable totalWindow {}
-    variable totalWindowSize 300
+    variable progressWin {}
+    variable totalWin {}
 
     typevariable statuslegend -array {
 	bedTemp          "Bed temp. (°C)"
@@ -316,27 +313,30 @@ snit::type printer {
 	return [expr {[info exists statuslegend($var)] ? $statuslegend($var) : [string totitle $var]}]
     }
 
+    method FormatTime {t} { # private
+	set t [expr {int(round($t / 1000))}]
+        return "[expr {$t / 3600}]h [expr {($t % 3600) / 60}]m [expr {$t % 60}]s"
+    }
+
     method setProgress {progress} {
-	if {$progress != $lastProgress} {
-	    if {$progress >= 0} {
-		set now [clock milliseconds]
-		if {$startTime <= 0} {
-		    set startTime $now
-		} else {
-		    set total [expr {100.0 * ($now - $lastTime) / ($progress - $lastProgress)}]
-		    set totalWindow [list {*}[expr {[llength $totalWindow] >= $totalWindowSize ? [lreplace $totalWindow 0 0] : $totalWindow}] $total]
-		    set totalTime [expr int(round(([join $totalWindow +]) / [llength $totalWindow].))]
-		    set status(totalTime)     [clock format [expr {int(round($totalTime / 1000))}] -format "%H:%M:%S"]
-		    set status(startTime)     [clock format [expr {int(round($startTime / 1000))}] -format "%H:%M:%S"]
-		    set status(endTime)       [clock format [expr {int(round(($startTime + $totalTime) / 1000))}] -format "%H:%M:%S"]
-		    set status(remainingTime) [clock format [expr {int(round(($startTime + $totalTime - $now) / 1000))}] -format "%H:%M:%S"]
+	if {$progress < 0} {
+	    lassign {"" "" "" 0 {} {}} status(endTime) status(totalTime) status(remainingTime) status(progress) progressWin totalWin
+	} else {
+	    set now [clock milliseconds]
+	    if {[llength $progressWin] > 0} {
+		set total {}
+		foreach {t p} $progressWin {
+		    lappend total [expr {100. * ($now - $t) / ($progress - $p)}]
 		}
-		set status(progress) [format "%.2f" $progress]
-		set lastTime $now
-	    } else {
-		lassign {"" "" "" "" 0 -1 -1} status(startTime) status(endTime) status(totalTime) status(remainingTime) status(progress) startTime lastTime
+		set total [lindex [lsort -real $total] [expr {[llength $total] / 2}]]
+		set totalWin [list {*}[expr {[llength $totalWin] >= 100 ? [lreplace $totalWin 0 0] : $totalWin}] $total]
+		set total [expr ([join $totalWin +]) / [llength $totalWin]]
+		set status(totalTime)     [$self FormatTime $total]
+		set status(endTime)       [$self FormatTime [expr {$now + (100 - $progress) * $total / 100}]]
+		set status(remainingTime) [$self FormatTime [expr {(100 - $progress) * $total / 100}]]
 	    }
-	    set lastProgress $progress
+	    set progressWin [list {*}[expr {[llength $progressWin] >= 200 ? [lreplace $progressWin 0 1] : $progressWin}] $now $progress]
+	    set status(progress) [format "%.2f" $progress]
 	}
     }
 
