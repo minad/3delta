@@ -145,7 +145,7 @@ snit::type connection {
 	    $self notify disconnect $error
 	}
 	if {$reconnectId == 0} {
-	    set reconnectId [after 5000 $self Connect]
+	    set reconnectId [after 1000 $self Connect]
 	}
     }
 }
