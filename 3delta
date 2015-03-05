@@ -936,10 +936,10 @@ snit::widget motion {
 	set conn $options(-connection)
 
 	ttk::frame  $win.0
-	ttk::button $win.0.home      -text "Home"           -width 4 -command [list $conn command $selfns {G28 ; Home}]
+	ttk::button $win.0.home      -text "Home"           -width 5 -command [list $conn command $selfns {G28 ; Home}]
 	ttk::button $win.0.bedcenter -text "Bed center"     -command [list $conn command $selfns {G1 X0 Y0 Z0 F$xyspeed ; Move to center of bed}]
 	ttk::button $win.0.motoron   -text "Motors on"      -command [list $conn command $selfns {M17 ; Motors on}]
-	ttk::button $win.0.bed       -text "Bed"            -width 3 -command [list $conn command $selfns {G1 Z0 F$zspeed ; Move to bed}]
+	ttk::button $win.0.bed       -text "Bed"            -width 4 -command [list $conn command $selfns {G1 Z0 F$zspeed ; Move to bed}]
 	ttk::button $win.0.abovebed  -text "10cm above bed" -command [list $conn command $selfns {G1 X0 Y0 Z100 F$zspeed ; Move 10cm above bed}]
 	ttk::button $win.0.motoroff  -text "Motors off"     -command [list $conn command $selfns {M18 ; Motors off}]
 	grid $win.0.home $win.0.bedcenter $win.0.motoron  -sticky news
