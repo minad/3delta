@@ -256,6 +256,99 @@ snit::type gcodequeue {
     }
 }
 
+snit::widget progresstime {
+    hulltype ttk::frame
+
+    option -variable
+    option -maximum 100
+    variable canvas
+    variable text
+    variable var
+    variable max
+    variable median {}
+    variable medianSize 100
+    variable mean {}
+    variable meanSize 100
+    variable totalTime -1
+    variable lastTime  -1
+    variable leftTime  -1
+    variable updateId ""
+
+    constructor {args} {
+	$self configurelist $args
+	set var $options(-variable)
+	set max $options(-maximum)
+	trace add variable $var write [list $self Changed]
+	set canvas $win.canvas
+	canvas $canvas -width 200 -height 20 -borderwidth 1 -relief sunken
+	ttk::label $win.text -textvariable [myvar text]
+	pack $canvas $win.text -fill x
+	$self Update
+    }
+
+    destructor {
+	if {$updateId ne ""} {
+	    after cancel $updateId
+	}
+    }
+
+    method Update {} { # private
+	if {$totalTime >= 0} {
+	    set now [clock milliseconds]
+	    set leftTime [expr {max(0, $leftTime - $now + $lastTime)}]
+	    set text [format "%s left of %s" [$self FormatTime $leftTime] [$self FormatTime $totalTime]]
+	    set lastTime $now
+	}
+	set updateId [after 1000 [list $self Update]]
+    }
+
+    method Changed {args} { # private
+	set now [clock milliseconds]
+	set x [expr {[winfo width $canvas] / 2}]
+	set y [expr {[winfo height $canvas] / 2}]
+	if {([llength $median] > 0 && $now - [lindex $median end] < 250) || $x <= 0} {
+	    return
+	}
+
+	set value [expr {[info exists $var] ? [set $var] : -1}]
+	$canvas delete all
+	if {$value < 0} {
+	    lassign {"" {} {} -1} text median mean totalTime
+	    $canvas create text $x $y -text "0%"
+	} else {
+	    $canvas create rectangle 0 0 [expr [expr {int(round([winfo width $canvas] * $value / $max))}]]\
+		[winfo height $canvas] -fill lightblue -outline ""
+	    $canvas create text $x $y -text [format "%.2f%%" [expr {100. * $value / $max}]]
+
+	    set total {}
+	    foreach {v t} $median {
+		if {$value != $v} {
+		    lappend total [expr {$max * ($now - $t) / ($value - $v)}]
+		}
+	    }
+	    if {[llength $total] > 0} {
+		set total [lindex [lsort -real $total] [expr {[llength $total] / 2}]]
+		set mean [list {*}[expr {[llength $mean] >= $meanSize ? [lreplace $mean 0 0] : $mean}] $total]
+		set totalTime [expr {[tcl::mathop::+ {*}$mean] / [llength $mean]}]
+		set leftTime [expr {($max - $value) * $totalTime / $max}]
+		set lastTime $now
+	    }
+	    set median [list {*}[expr {[llength $median] >= $medianSize ? [lreplace $median 0 1] : $median}] $value $now]
+	}
+    }
+
+    method FormatTime {t} { # private
+	set t [expr {int(round($t / 1000))}]
+	if {$t >= 3600} {
+	    return [format "%02dh %02dm %02ds" [expr {$t / 3600}] [expr {($t % 3600) / 60}] [expr {$t % 60}]]
+	}
+	if {$t >= 60} {
+	    return [format "%02dm %02ds" [expr {$t / 60}] [expr {$t % 60}]]
+	}
+	return [format "%02ds" $t]
+    }
+}
+
 snit::type printer {
     option -connection
     variable conn
@@ -265,17 +358,12 @@ snit::type printer {
 	mode idle
     }
 
-    # new file list
     variable newFiles 0
 
     # handle update delays
     variable fastSent 0
     variable slowSent 0
     variable queued 0
-
-    # progress estimator
-    variable progressWin {}
-    variable totalWin {}
 
     typevariable statuslegend -array {
 	bedTemp          "Bed temp. (°C)"
@@ -289,9 +377,6 @@ snit::type printer {
 	position         "Position (mm)"
 	axis             "Axis (mm)"
 	e                "Extruder (mm)"
-	progress         "Progress (%)"
-	totalTime        "Total"
-	remainingTime    "Remaining"
     }
 
     constructor {args} {
@@ -311,33 +396,6 @@ snit::type printer {
 
     typemethod statuslegend {var} {
 	return [expr {[info exists statuslegend($var)] ? $statuslegend($var) : [string totitle $var]}]
-    }
-
-    method FormatTime {t} { # private
-	set t [expr {int(round($t / 1000))}]
-        return "[expr {$t / 3600}]h [expr {($t % 3600) / 60}]m [expr {$t % 60}]s"
-    }
-
-    method setProgress {progress} {
-	if {$progress < 0} {
-	    lassign {"" "" "" 0 {} {}} status(endTime) status(totalTime) status(remainingTime) status(progress) progressWin totalWin
-	} else {
-	    set now [clock milliseconds]
-	    if {[llength $progressWin] > 0} {
-		set total {}
-		foreach {t p} $progressWin {
-		    lappend total [expr {100. * ($now - $t) / ($progress - $p)}]
-		}
-		set total [lindex [lsort -real $total] [expr {[llength $total] / 2}]]
-		set totalWin [list {*}[expr {[llength $totalWin] >= 100 ? [lreplace $totalWin 0 0] : $totalWin}] $total]
-		set total [expr ([join $totalWin +]) / [llength $totalWin]]
-		set status(totalTime)     [$self FormatTime $total]
-		set status(endTime)       [$self FormatTime [expr {$now + (100 - $progress) * $total / 100}]]
-		set status(remainingTime) [$self FormatTime [expr {(100 - $progress) * $total / 100}]]
-	    }
-	    set progressWin [list {*}[expr {[llength $progressWin] >= 200 ? [lreplace $progressWin 0 1] : $progressWin}] $now $progress]
-	    set status(progress) [format "%.2f" $progress]
-	}
     }
 
     method Event {c event data} { # private
@@ -368,10 +426,9 @@ snit::type printer {
 		set mode $status(mode)
 		if {[regexp -line -nocase {SD\s+printing\s+byte\s+(\d+)/(\d+)} $data matched printed total]} {
 		    set mode [expr {$printed == 0 ? "idle" : "playing"}]
-		    $self setProgress [expr {(100.0 * $printed) / max(1, $total)}]
+		    set status(progress) [expr {(100.0 * $printed) / max(1, $total)}]
 	        } elseif {[regexp -nocase {Not.*playing} $data]} {
-		    set mode idle
-		    $self setProgress -1
+		    lassign {idle -1} mode status(progress)
 		}
 
 		if {$status(mode) ne $mode} {
@@ -474,7 +531,7 @@ snit::type sender {
 		$conn filterEnd
 		destroy .uploadprogress
 	    } else {
-		$printer setProgress -1
+		$printer status progress -1
 	    }
 	    $printer status mode idle
 	    $conn detach [list $self Send]
@@ -495,7 +552,7 @@ snit::type sender {
 	    $conn send [lindex $data $sent] {*}[expr {$mode ne "uploading" ? {1} : {}}]
 	    incr sent
 	    if {$mode ne "uploading"} {
-		$printer setProgress [expr {100.0 * $sent / [llength $data]}]
+		$printer status progress [expr {100.0 * $sent / [llength $data]}]
 	    }
 	}
     }
@@ -503,7 +560,7 @@ snit::type sender {
     method UploadProgress {} { # private
 	toplevel .uploadprogress
 
-	ttk::progressbar .uploadprogress.progress -variable [myvar sent] -maximum [llength $data]
+	progresstime .uploadprogress.progress -variable [myvar sent] -maximum [llength $data]
 	ttk::button .uploadprogress.cancel -text "Cancel" -command [list $self destroy]
 	pack .uploadprogress.progress -fill x -expand 1 -side left
 	pack .uploadprogress.cancel -side left
@@ -597,7 +654,7 @@ snit::widget compass {
 
 	set canvas $win.canvas
 	canvas $canvas -width $width -height $height
-	pack $win.canvas
+	pack $canvas
 
 	set h [expr {$height - 1}]
 	set xCenter [expr {$width - $h / 2}]
@@ -1188,7 +1245,7 @@ snit::widget player {
 	grid $win.2.feedspeedl1 $win.2.feedspeed $win.2.feedspeedl2 $win.2.feedset -sticky news
 	grid $win.2.flowspeedl1 $win.2.flowspeed $win.2.flowspeedl2 $win.2.flowset -sticky news
 
-	ttk::progressbar $win.progress -variable [$printer statusvar progress]
+	progresstime $win.progress -variable [$printer statusvar progress]
 
 	pack $win.0 -fill both
 	pack $win.1 $win.2 $win.progress -fill x
@@ -1264,7 +1321,7 @@ snit::widget console {
     delegate method * to conn
     variable conn
     variable command
-    variable locked 0
+    variable locked 1
     variable log
 
     constructor {args} {
@@ -1384,7 +1441,7 @@ snit::widget printerstatus {
 
         $hull configure -text "Status"
 
-	foreach var {mode connected progress totalTime remainingTime hotend bed position axis e} {
+	foreach var {mode connected hotend bed position axis e} {
 	    set label [printer statuslegend $var]
 	    set unit ""
 	    regexp {\A(.*?)\s*\((.*?)\)\Z} $label matched label unit
