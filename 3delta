@@ -272,6 +272,7 @@ snit::widget progresstime {
     variable totalTime -1
     variable lastTime  -1
     variable leftTime  -1
+    variable lastChanged -1
     variable updateId ""
 
     constructor {args} {
@@ -306,9 +307,8 @@ snit::widget progresstime {
 	set now [clock milliseconds]
 	set x [expr {[winfo width $canvas] / 2}]
 	set y [expr {[winfo height $canvas] / 2}]
-	if {([llength $median] > 0 && $now - [lindex $median end] < 250) || $x <= 0} {
-	    return
-	}
+	if {$now - $lastChanged < 250 || $x <= 0} { return }
+	set lastChanged $now
 
 	set value [expr {[info exists $var] ? [set $var] : -1}]
 	$canvas delete all
@@ -426,7 +426,7 @@ snit::type printer {
 		set mode $status(mode)
 		if {[regexp -line -nocase {SD\s+printing\s+byte\s+(\d+)/(\d+)} $data matched printed total]} {
 		    set mode [expr {$printed == 0 ? "idle" : "playing"}]
-		    set status(progress) [expr {(100.0 * $printed) / max(1, $total)}]
+		    set status(progress) [expr {$mode eq "playing" ? (100.0 * $printed) / max(1, $total) : -1}]
 	        } elseif {[regexp -nocase {Not.*playing} $data]} {
 		    lassign {idle -1} mode status(progress)
 		}
