@@ -89,7 +89,7 @@ snit::type connection {
 	    set address $options(-address)
 	    if {[regexp {\A(/|COM)} $address]} {
 		set fh [open $address RDWR]
-		chan configure $fh -mode 11500,n,8,1
+		chan configure $fh -mode 115200,n,8,1
 	    } else {
 		if {[llength [set address [split $address :]]] == 1} {
 		    lappend address 23
