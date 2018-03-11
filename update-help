@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
-wiki_list = `wget --no-cache --quiet -O - http://smoothieware.org/supported-g-codes`.
-  scan(/<tr>\s*<td>(.*?)<\/td>\s*<\/tr>/m).map {|x|
+html = `wget --no-cache --quiet -O - http://smoothieware.org/supported-g-codes`
+
+wiki_list = html.scan(/<tr[^>]*>\s*<td[^>]*>(.*?)<\/td>\s*<\/tr>/m).map {|x|
     x[0].split('</td>').map {|y| y.gsub(/<[^>]+>/, '').gsub(/\A\s+|\s+\Z/, '').gsub(/\s+|&nbsp;|&#160;/, ' ').gsub('&quot;', '"').gsub('&lt;', '<').gsub('&gt;', '>') }
   }
 
