@@ -899,7 +899,7 @@ snit::widget spider {
 	} elseif {$x < $width - $h - 5 && $last eq "z"}  {
 	    set zMax [$printer status zMax -default 200]
 	    set zPos [expr {max(0, min($zMax, $zMax * ($h - $y) / $h))}]
-	    {*}$command [format {G1 Z%.3f F$xyspeed ; Absolute move} $zPos]
+	    {*}$command [format {G1 Z%.3f F$zspeed ; Absolute move} $zPos]
 	}
 	set last ""
 	$canvas delete mouse
