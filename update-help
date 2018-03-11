@@ -2,14 +2,14 @@
 html = `wget --no-cache --quiet -O - http://smoothieware.org/supported-g-codes`
 
 wiki_list = html.scan(/<tr[^>]*>\s*<td[^>]*>(.*?)<\/td>\s*<\/tr>/m).map {|x|
-    x[0].split('</td>').map {|y| y.gsub(/<[^>]+>/, '').gsub(/\A\s+|\s+\Z/, '').gsub(/\s+|&nbsp;|&#160;/, ' ').gsub('&quot;', '"').gsub('&lt;', '<').gsub('&gt;', '>') }
+        x[0].split('</td>').map {|y| y.gsub(/<[^>]+>/, '').gsub(/\A\s+|\s+\Z/, '').gsub(/\s+|&nbsp;|&#160;/, ' ').gsub('&quot;', '"').gsub('&lt;', '<').gsub('&gt;', '>').gsub(/[“”]/, '"') }
   }
 
 wiki_list.sort_by!(&:first)
 
 s = wiki_list.map {|code, desc, example|
   example = code if example.empty?
-  [code, desc.inspect.gsub(/([\[\]])/, '\\\\\1'), example.inspect].join(" ")
+  [code.inspect, desc.inspect.gsub(/([\[\]])/, '\\\\\1'), example.inspect].join(" ")
 }.map {|x| "        #{x}" }.join "\n"
 
 file = File.read("3delta")
