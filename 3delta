@@ -20,17 +20,17 @@ snit::type notifier {
     variable watchers {}
 
     method attach {w} {
-	lappend watchers $w
+        lappend watchers $w
     }
 
     method detach {w} {
-	set watchers [lsearch -all -inline -not -exact $watchers $w]
+        set watchers [lsearch -all -inline -not -exact $watchers $w]
     }
 
     method notify {event data} {
-	foreach w $watchers {
-	    {*}$w $self $event $data
-	}
+        foreach w $watchers {
+            {*}$w $self $event $data
+        }
     }
 }
 
@@ -45,108 +45,108 @@ snit::type connection {
     variable notifier
 
     constructor {args} {
-	$self configurelist $args
-	set notifier [notifier %AUTO%]
- 	$self Connect
+        $self configurelist $args
+        set notifier [notifier %AUTO%]
+        $self Connect
     }
 
     method connected {} {
-	return [expr {[$self Good] && $connected}]
+        return [expr {[$self Good] && $connected}]
     }
 
     method send {data} {
-	if {[$self connected]} {
-	    if {[catch {puts $fh $data} error]} {
-		$self Reconnect $error
-	    }
-	}
+        if {[$self connected]} {
+            if {[catch {puts $fh $data} error]} {
+                $self Reconnect $error
+            }
+        }
     }
 
     method queueSize {} {
-	return [expr {[string match "sock*" "$fh"] ? 10 : 1}]
+        return [expr {[string match "sock*" "$fh"] ? 10 : 1}]
     }
 
     method Good {} { # private
-	if {"$fh" eq ""} {
-	    $self Reconnect $lastError
-	    return 0
-	}
-	if {[string match "sock*" $fh]} {
-	    set error error
+        if {"$fh" eq ""} {
+            $self Reconnect $lastError
+            return 0
+        }
+        if {[string match "sock*" $fh]} {
+            set error error
             catch {set error [chan configure $fh -error]} error
-	    if {$error ne ""} {
+            if {$error ne ""} {
                 $self Reconnect $error
                 return 0
-	    }
-	    set lastError ""
-	}
-	return 1
+            }
+            set lastError ""
+        }
+        return 1
     }
 
     method Connect {} { # private
-	set reconnectId 0
-	if {[catch {
-	    set address $options(-address)
-	    if {[regexp {\A(/|COM)} $address]} {
-		set fh [open $address RDWR]
-		chan configure $fh -mode 115200,n,8,1
-	    } else {
-		if {[llength [set address [split $address :]]] == 1} {
-		    lappend address 23
-		}
-		set fh [socket -async {*}$address]
-	    }
-	    chan configure $fh -blocking 0 -buffering none -encoding binary -eofchar {}
-	    chan event $fh readable [list $self Readable]
-	    chan event $fh writable [list $self Writable]
-	} error]} {
-	    $self Reconnect $error
-	}
+        set reconnectId 0
+        if {[catch {
+            set address $options(-address)
+            if {[regexp {\A(/|COM)} $address]} {
+                set fh [open $address RDWR]
+                chan configure $fh -mode 115200,n,8,1
+            } else {
+                if {[llength [set address [split $address :]]] == 1} {
+                    lappend address 23
+                }
+                set fh [socket -async {*}$address]
+            }
+            chan configure $fh -blocking 0 -buffering none -encoding binary -eofchar {}
+            chan event $fh readable [list $self Readable]
+            chan event $fh writable [list $self Writable]
+        } error]} {
+            $self Reconnect $error
+        }
     }
 
     method Readable {} { # private
-	if {[$self connected]} {
-	    set line x
-	    while {[string length $line]} {
-		if {[catch {set line [read $fh 4096]} error]} {
-		    $self Reconnect $error
-		    return
-		}
-		if {[string length $line]} {
-		    $self notify receive $line
-		}
-		if {[eof $fh]} {
-		    $self Reconnect "connection closed"
-		    return
-		}
-	    }
-	}
+        if {[$self connected]} {
+            set line x
+            while {[string length $line]} {
+                if {[catch {set line [read $fh 4096]} error]} {
+                    $self Reconnect $error
+                    return
+                }
+                if {[string length $line]} {
+                    $self notify receive $line
+                }
+                if {[eof $fh]} {
+                    $self Reconnect "connection closed"
+                    return
+                }
+            }
+        }
     }
 
     method Writable {} { # private
-	if {[$self Good]} {
-	    chan event $fh writable ""
-	    if {[string match "sock*" $fh]} {
-		# telnet: do suppress go ahead
-		catch {puts -nonewline $fh "\xff\xfd\x03"}
-		# telnet: don't x-prompt (smoothie extension)
-		catch {puts -nonewline $fh "\xff\xfe\x55"}
-	    }
-	    set connected 1
-	    $self notify connect ""
-	}
+        if {[$self Good]} {
+            chan event $fh writable ""
+            if {[string match "sock*" $fh]} {
+                # telnet: do suppress go ahead
+                catch {puts -nonewline $fh "\xff\xfd\x03"}
+                # telnet: don't x-prompt (smoothie extension)
+                catch {puts -nonewline $fh "\xff\xfe\x55"}
+            }
+            set connected 1
+            $self notify connect ""
+        }
     }
 
     method Reconnect {error} { # private
-	catch {close $fh}
-	lassign {0 ""} connected fh
-	if {$lastError ne $error} {
-	    set lastError $error
-	    $self notify disconnect $error
-	}
-	if {$reconnectId == 0} {
-	    set reconnectId [after 1000 $self Connect]
-	}
+        catch {close $fh}
+        lassign {0 ""} connected fh
+        if {$lastError ne $error} {
+            set lastError $error
+            $self notify disconnect $error
+        }
+        if {$reconnectId == 0} {
+            set reconnectId [after 1000 $self Connect]
+        }
     }
 }
 
@@ -166,12 +166,12 @@ snit::type gcodequeue {
     variable conn
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	set notifier [notifier %AUTO%]
-	set conn $options(-connection)
+        set notifier [notifier %AUTO%]
+        set conn $options(-connection)
 
-	$conn attach [list $self Event]
+        $conn attach [list $self Event]
     }
 
     method sent      {} { return $sent }
@@ -179,18 +179,18 @@ snit::type gcodequeue {
     method received  {} { return $received }
 
     method queueFull {} {
-	return [expr {($queued - $received) >= [$self queueSize]}]
+        return [expr {($queued - $received) >= [$self queueSize]}]
     }
 
     method filterBegin {name} {
-	if {[expr {1e99 == [lindex $filter end]}]} {
-	    error "There is already an active filter!"
-	}
-	lappend filter $name $queued 1e99
+        if {[expr {1e99 == [lindex $filter end]}]} {
+            error "There is already an active filter!"
+        }
+        lappend filter $name $queued 1e99
     }
 
     method filterEnd {} {
-	lset filter end $queued
+        lset filter end $queued
     }
 
     method filter {name data} {
@@ -200,59 +200,59 @@ snit::type gcodequeue {
     }
 
     method send {data} {
-	set data [regsub -all -line {^\s*$\n?|\s*;.*$} $data ""]
-	incr queued [regexp -all -line {^[GM]} $data]
-	lappend queue {*}[split $data "\n"]
-	$self SendQueue
+        set data [regsub -all -line {^\s*$\n?|\s*;.*$} $data ""]
+        incr queued [regexp -all -line {^[GM]} $data]
+        lappend queue {*}[split $data "\n"]
+        $self SendQueue
     }
 
     method Event {c event data} { # private
-	if {$event eq "receive"} {
-	    $self RemoveOldFilters
-	    foreach line [split [string trimright $data "\n"] "\n"] {
-		$self ReceivedLine "$line\n"
-	    }
-	    $self SendQueue
-	} else {
-	    if {$event eq "connect"} {
-		lassign {0 0 0 {} {}} sent received queued queue filter
-	    }
-	    $self notify $event $data
-	}
+        if {$event eq "receive"} {
+            $self RemoveOldFilters
+            foreach line [split [string trimright $data "\n"] "\n"] {
+                $self ReceivedLine "$line\n"
+            }
+            $self SendQueue
+        } else {
+            if {$event eq "connect"} {
+                lassign {0 0 0 {} {}} sent received queued queue filter
+            }
+            $self notify $event $data
+        }
     }
 
     method ReceivedLine {line} { # private
-	incr received [set inc [regexp {\Aok\s} $line]]
-	if {$received > $sent} { set received $sent }
-	foreach {name min max} $filter {
-	    if {$received > $min && $received - $inc < $max} {
-		$self notify $name $line
-		return
-	    }
-	}
-	$self notify receive $line
+        incr received [set inc [regexp {\Aok\s} $line]]
+        if {$received > $sent} { set received $sent }
+        foreach {name min max} $filter {
+            if {$received > $min && $received - $inc < $max} {
+                $self notify $name $line
+                return
+            }
+        }
+        $self notify receive $line
     }
 
     method RemoveOldFilters {} { # private
-	set i -1
-	foreach {name min max} $filter {
-	    if {$received < $max} {
-		if {$i > 0} {
-		    set filter [lreplace $filter 0 $i]
-		}
-		break
-	    }
-	    incr i 3
-	}
+        set i -1
+        foreach {name min max} $filter {
+            if {$received < $max} {
+                if {$i > 0} {
+                    set filter [lreplace $filter 0 $i]
+                }
+                break
+            }
+            incr i 3
+        }
     }
 
     method SendQueue {} { # private
-	while {$sent - $received < [$self queueSize] && [llength $queue] > 0} {
-	    set line [lindex $queue 0]
-	    set queue [lreplace $queue 0 0]
-	    incr sent [regexp {\A[GM]} $line]
-	    $conn send $line
-	}
+        while {$sent - $received < [$self queueSize] && [llength $queue] > 0} {
+            set line [lindex $queue 0]
+            set queue [lreplace $queue 0 0]
+            incr sent [regexp {\A[GM]} $line]
+            $conn send $line
+        }
     }
 }
 
@@ -276,76 +276,76 @@ snit::widget progresstime {
     variable updateId ""
 
     constructor {args} {
-	$self configurelist $args
-	set var $options(-variable)
-	set max $options(-maximum)
-	trace add variable $var write [list $self Changed]
-	set canvas $win.canvas
-	canvas $canvas -width 200 -height 20 -borderwidth 1 -relief sunken
-	ttk::label $win.text -textvariable [myvar text]
-	pack $canvas $win.text -fill x
-	$self Update
+        $self configurelist $args
+        set var $options(-variable)
+        set max $options(-maximum)
+        trace add variable $var write [list $self Changed]
+        set canvas $win.canvas
+        canvas $canvas -width 200 -height 20 -borderwidth 1 -relief sunken
+        ttk::label $win.text -textvariable [myvar text]
+        pack $canvas $win.text -fill x
+        $self Update
     }
 
     destructor {
-	if {$updateId ne ""} {
-	    after cancel $updateId
-	}
+        if {$updateId ne ""} {
+            after cancel $updateId
+        }
     }
 
     method Update {} { # private
-	if {$totalTime >= 0} {
-	    set now [clock milliseconds]
-	    set leftTime [expr {max(0, $leftTime - $now + $lastTime)}]
-	    set text [format "%s left of %s" [$self FormatTime $leftTime] [$self FormatTime $totalTime]]
-	    set lastTime $now
-	}
-	set updateId [after 1000 [list $self Update]]
+        if {$totalTime >= 0} {
+            set now [clock milliseconds]
+            set leftTime [expr {max(0, $leftTime - $now + $lastTime)}]
+            set text [format "%s left of %s" [$self FormatTime $leftTime] [$self FormatTime $totalTime]]
+            set lastTime $now
+        }
+        set updateId [after 1000 [list $self Update]]
     }
 
     method Changed {args} { # private
-	set now [clock milliseconds]
-	set x [expr {[winfo width $canvas] / 2}]
-	set y [expr {[winfo height $canvas] / 2}]
-	if {$now - $lastChanged < 250 || $x <= 0} { return }
-	set lastChanged $now
+        set now [clock milliseconds]
+        set x [expr {[winfo width $canvas] / 2}]
+        set y [expr {[winfo height $canvas] / 2}]
+        if {$now - $lastChanged < 250 || $x <= 0} { return }
+        set lastChanged $now
 
-	set value [expr {[info exists $var] ? [set $var] : -1}]
-	$canvas delete all
-	if {$value < 0} {
-	    lassign {"" {} {} -1} text median mean totalTime
-	    $canvas create text $x $y -text "0%"
-	} else {
-	    $canvas create rectangle 0 0 [expr [expr {int(round([winfo width $canvas] * $value / $max))}]]\
-		[winfo height $canvas] -fill lightblue -outline ""
-	    $canvas create text $x $y -text [format "%.2f%%" [expr {100. * $value / $max}]]
+        set value [expr {[info exists $var] ? [set $var] : -1}]
+        $canvas delete all
+        if {$value < 0} {
+            lassign {"" {} {} -1} text median mean totalTime
+            $canvas create text $x $y -text "0%"
+        } else {
+            $canvas create rectangle 0 0 [expr [expr {int(round([winfo width $canvas] * $value / $max))}]]\
+                [winfo height $canvas] -fill lightblue -outline ""
+            $canvas create text $x $y -text [format "%.2f%%" [expr {100. * $value / $max}]]
 
-	    set total {}
-	    foreach {v t} $median {
-		if {$value != $v} {
-		    lappend total [expr {$max * ($now - $t) / ($value - $v)}]
-		}
-	    }
-	    if {[llength $total] > 0} {
-		set total [lindex [lsort -real $total] [expr {[llength $total] / 2}]]
-		set mean [list {*}[expr {[llength $mean] >= $meanSize ? [lreplace $mean 0 0] : $mean}] $total]
-		set totalTime [expr {[tcl::mathop::+ {*}$mean] / [llength $mean]}]
-		set leftTime [expr {($max - $value) * $totalTime / $max}]
-		set lastTime $now
-	    }
-	    set median [list {*}[expr {[llength $median] >= $medianSize ? [lreplace $median 0 1] : $median}] $value $now]
-	}
+            set total {}
+            foreach {v t} $median {
+                if {$value != $v} {
+                    lappend total [expr {$max * ($now - $t) / ($value - $v)}]
+                }
+            }
+            if {[llength $total] > 0} {
+                set total [lindex [lsort -real $total] [expr {[llength $total] / 2}]]
+                set mean [list {*}[expr {[llength $mean] >= $meanSize ? [lreplace $mean 0 0] : $mean}] $total]
+                set totalTime [expr {[tcl::mathop::+ {*}$mean] / [llength $mean]}]
+                set leftTime [expr {($max - $value) * $totalTime / $max}]
+                set lastTime $now
+            }
+            set median [list {*}[expr {[llength $median] >= $medianSize ? [lreplace $median 0 1] : $median}] $value $now]
+        }
     }
 
     method FormatTime {t} { # private
-	set t [expr {int(round($t / 1000))}]
-	if {$t >= 3600} {
-	    return [format "%02dh %02dm %02ds" [expr {$t / 3600}] [expr {($t % 3600) / 60}] [expr {$t % 60}]]
-	}
-	if {$t >= 60} {
-	    return [format "%02dm %02ds" [expr {$t / 60}] [expr {$t % 60}]]
-	}
-	return [format "%02ds" $t]
+        set t [expr {int(round($t / 1000))}]
+        if {$t >= 3600} {
+            return [format "%02dh %02dm %02ds" [expr {$t / 3600}] [expr {($t % 3600) / 60}] [expr {$t % 60}]]
+        }
+        if {$t >= 60} {
+            return [format "%02dm %02ds" [expr {$t / 60}] [expr {$t % 60}]]
+        }
+        return [format "%02ds" $t]
     }
 }
 
@@ -355,7 +355,7 @@ snit::type printer {
 
     # mode = idle, playing, uploading, sending
     variable status -array {
-	mode idle
+        mode idle
     }
 
     variable newFiles 0
@@ -366,115 +366,115 @@ snit::type printer {
     variable queued 0
 
     typevariable statuslegend -array {
-	bedTemp          "Bed temp. (°C)"
-	bedTargetTemp    "Bed target temp. (°C)"
-	bedDeltaTemp     "Bed temp. deviation (°C)"
-	bedHeater        "Bed heater PWM"
-	hotendTemp       "Hotend temp. (°C)"
-	hotendTargetTemp "Hotend target temp. (°C)"
-	hotendDeltaTemp  "Hotend temp. deviation (°C)"
-	hotendHeater     "Hotend heater PWM"
-	position         "Position (mm)"
-	axis             "Axis (mm)"
-	e                "Extruder (mm)"
+        bedTemp          "Bed temp. (°C)"
+        bedTargetTemp    "Bed target temp. (°C)"
+        bedDeltaTemp     "Bed temp. deviation (°C)"
+        bedHeater        "Bed heater PWM"
+        hotendTemp       "Hotend temp. (°C)"
+        hotendTargetTemp "Hotend target temp. (°C)"
+        hotendDeltaTemp  "Hotend temp. deviation (°C)"
+        hotendHeater     "Hotend heater PWM"
+        position         "Position (mm)"
+        axis             "Axis (mm)"
+        e                "Extruder (mm)"
     }
 
     constructor {args} {
-	$self configurelist $args
-	set conn $options(-connection)
-	$conn attach [list $self Event]
-	every 250 $self Update
+        $self configurelist $args
+        set conn $options(-connection)
+        $conn attach [list $self Event]
+        every 250 $self Update
     }
 
     method status {name {value {}} args} {
-	return [expr {"$value" eq "-default" ? ([info exists status($name)] ? $status($name) : $args) : [set status($name) {*}$value]}]
+        return [expr {"$value" eq "-default" ? ([info exists status($name)] ? $status($name) : $args) : [set status($name) {*}$value]}]
     }
 
     method statusvar {name} {
-	return [myvar status($name)]
+        return [myvar status($name)]
     }
 
     typemethod statuslegend {var} {
-	return [expr {[info exists statuslegend($var)] ? $statuslegend($var) : [string totitle $var]}]
+        return [expr {[info exists statuslegend($var)] ? $statuslegend($var) : [string totitle $var]}]
     }
 
     method Event {c event data} { # private
-	if {$event eq "connect"} {
-	    # safety reason: assume we are playing
-	    lassign {yes playing 0 0} status(connected) status(mode) fastSent slowSent queued
-	} elseif {$event eq "disconnect"} {
-	    set status(connected) no
-	} elseif {$event eq "receive" || $event eq "status"} {
-	    # todo hack M665 works only on smoothie like this.
-	    # Patch to support different firmware. patch smoothie to return something standard.
-	    regexp -line -nocase {R:\s*(\d+\.\d+).*Max\s+Z\s+(\d+\.\d+)} $data matched status(armRadius) status(zMax)
-	    regexp -line {T:\s*(\d+\.\d+)\s*/\s*(\d+.\d+)\s*@(\d+)} $data matched status(hotendTemp) status(hotendTargetTemp) status(hotendHeater)
-	    regexp -line {B:\s*(\d+\.\d+)\s*/\s*(\d+.\d+)\s*@(\d+)} $data matched status(bedTemp) status(bedTargetTemp) status(bedHeater)
+        if {$event eq "connect"} {
+            # safety reason: assume we are playing
+            lassign {yes playing 0 0} status(connected) status(mode) fastSent slowSent queued
+        } elseif {$event eq "disconnect"} {
+            set status(connected) no
+        } elseif {$event eq "receive" || $event eq "status"} {
+            # todo hack M665 works only on smoothie like this.
+            # Patch to support different firmware. patch smoothie to return something standard.
+            regexp -line -nocase {R:\s*(\d+\.\d+).*Max\s+Z\s+(\d+\.\d+)} $data matched status(armRadius) status(zMax)
+            regexp -line {T:\s*(\d+\.\d+)\s*/\s*(\d+.\d+)\s*@(\d+)} $data matched status(hotendTemp) status(hotendTargetTemp) status(hotendHeater)
+            regexp -line {B:\s*(\d+\.\d+)\s*/\s*(\d+.\d+)\s*@(\d+)} $data matched status(bedTemp) status(bedTargetTemp) status(bedHeater)
 
-	    foreach x {x y z a b c e} {
-		regexp -line "C:*.*[string toupper $x]:\\s*(-?\\d+\\.\\d+)" $data matched status($x)
-	    }
-
-	    catch {set status(hotend)   "$status(hotendTemp)/$status(hotendTargetTemp)@$status(hotendHeater)"}
-	    catch {set status(bed)      "$status(bedTemp)/$status(bedTargetTemp)@$status(bedHeater)"}
-	    catch {set status(position) "$status(x), $status(y), $status(z)"}
-	    catch {set status(axis)     "$status(a), $status(b), $status(c)"}
-	    catch {set status(hotendDeltaTemp) [expr {$status(hotendTemp) - $status(hotendTargetTemp)}]}
-	    catch {set status(bedDeltaTemp) [expr {$status(bedTemp) - $status(bedTargetTemp)}]}
-
-	    if {$status(mode) eq "idle" || $status(mode) eq "playing"} {
-		set mode $status(mode)
-		if {[regexp -line -nocase {SD\s+printing\s+byte\s+(\d+)/(\d+)} $data matched printed total]} {
-		    set mode [expr {$printed == 0 ? "idle" : "playing"}]
-		    set status(progress) [expr {$mode eq "playing" ? (100.0 * $printed) / max(1, $total) : -1}]
-	        } elseif {[regexp -nocase {Not.*playing} $data]} {
-		    lassign {idle -1} mode status(progress)
-		}
-
-		if {$status(mode) ne $mode} {
-		    set status(mode) $mode
-		    set slowSent 0
-		}
+            foreach x {x y z a b c e} {
+                regexp -line "C:*.*[string toupper $x]:\\s*(-?\\d+\\.\\d+)" $data matched status($x)
             }
 
-	    foreach file [regexp -all -inline -nocase {[\w\.\-\+]+\.g[\w\.\-\+]*} $data] {
-		if {$newFiles == 0} {
-		    set newFiles {}
-		}
-		lappend newFiles $file
-		lappend status(files) $file
-		set newFiles [lsort -unique $newFiles]
-		set status(files) [lsort -unique $status(files)]
-	    }
-	}
+            catch {set status(hotend)   "$status(hotendTemp)/$status(hotendTargetTemp)@$status(hotendHeater)"}
+            catch {set status(bed)      "$status(bedTemp)/$status(bedTargetTemp)@$status(bedHeater)"}
+            catch {set status(position) "$status(x), $status(y), $status(z)"}
+            catch {set status(axis)     "$status(a), $status(b), $status(c)"}
+            catch {set status(hotendDeltaTemp) [expr {$status(hotendTemp) - $status(hotendTargetTemp)}]}
+            catch {set status(bedDeltaTemp) [expr {$status(bedTemp) - $status(bedTargetTemp)}]}
+
+            if {$status(mode) eq "idle" || $status(mode) eq "playing"} {
+                set mode $status(mode)
+                if {[regexp -line -nocase {SD\s+printing\s+byte\s+(\d+)/(\d+)} $data matched printed total]} {
+                    set mode [expr {$printed == 0 ? "idle" : "playing"}]
+                    set status(progress) [expr {$mode eq "playing" ? (100.0 * $printed) / max(1, $total) : -1}]
+                } elseif {[regexp -nocase {Not.*playing} $data]} {
+                    lassign {idle -1} mode status(progress)
+                }
+
+                if {$status(mode) ne $mode} {
+                    set status(mode) $mode
+                    set slowSent 0
+                }
+            }
+
+            foreach file [regexp -all -inline -nocase {[\w\.\-\+]+\.g[\w\.\-\+]*} $data] {
+                if {$newFiles == 0} {
+                    set newFiles {}
+                }
+                lappend newFiles $file
+                lappend status(files) $file
+                set newFiles [lsort -unique $newFiles]
+                set status(files) [lsort -unique $status(files)]
+            }
+        }
     }
 
     method Update {} { # private
-	if {$status(mode) ne "uploading" && [$conn received] >= $queued && [$conn connected]} {
-	    set now [clock milliseconds]
-	    if {$now - $slowSent >= 10000} {
-		if {$status(mode) eq "idle"} {
-		    if {$newFiles != 0} {
-			set status(files) $newFiles
-			set newFiles 0
-		    }
-		    # M20 is really slow, don't do that often and while playing
-		    # todo hack first gcode must have one line answer for filtering
-		    $conn filter status "M114\nM105\nM27\nM20\nM665"
-		} else {
-		    # todo hack first gcode must have one line answer for filtering
-		    $conn filter status "M114\nM105\nM27\nM665"
-		}
-		set slowSent $now
-		set fastSent $now
-		set queued [$conn queued]
-	    } elseif {$now - $fastSent >= 1000} {
-		# todo hack first gcode must have one line answer for filtering
-		$conn filter status "M114\nM105\nM27"
-		set fastSent $now
-		set queued [$conn queued]
-	    }
-	}
+        if {$status(mode) ne "uploading" && [$conn received] >= $queued && [$conn connected]} {
+            set now [clock milliseconds]
+            if {$now - $slowSent >= 10000} {
+                if {$status(mode) eq "idle"} {
+                    if {$newFiles != 0} {
+                        set status(files) $newFiles
+                        set newFiles 0
+                    }
+                    # M20 is really slow, don't do that often and while playing
+                    # todo hack first gcode must have one line answer for filtering
+                    $conn filter status "M114\nM105\nM27\nM20\nM665"
+                } else {
+                    # todo hack first gcode must have one line answer for filtering
+                    $conn filter status "M114\nM105\nM27\nM665"
+                }
+                set slowSent $now
+                set fastSent $now
+                set queued [$conn queued]
+            } elseif {$now - $fastSent >= 1000} {
+                # todo hack first gcode must have one line answer for filtering
+                $conn filter status "M114\nM105\nM27"
+                set fastSent $now
+                set queued [$conn queued]
+            }
+        }
     }
 }
 
@@ -491,87 +491,87 @@ snit::type sender {
     variable sent 0
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	set conn $options(-connection)
-	set printer $options(-printer)
+        set conn $options(-connection)
+        set printer $options(-printer)
 
-	set file [tk_getOpenFile -title "Select file" -filetypes {{G-Code {.gcode .g*}} {{All files} {*}}}]
-	if {$file eq "" || [catch {set fh [open $file r]}]} {
-	    after idle $self destroy
-	    return
-	}
+        set file [tk_getOpenFile -title "Select file" -filetypes {{G-Code {.gcode .g*}} {{All files} {*}}}]
+        if {$file eq "" || [catch {set fh [open $file r]}]} {
+            after idle $self destroy
+            return
+        }
 
-	set data [read $fh]
-	close $fh
+        set data [read $fh]
+        close $fh
 
-	set data [split $data "\n"]
-	set file [file tail $file]
+        set data [split $data "\n"]
+        set file [file tail $file]
 
-	set mode $options(-mode)
-	$printer status mode $mode
-	$conn attach [list $self Send]
+        set mode $options(-mode)
+        $printer status mode $mode
+        $conn attach [list $self Send]
 
-	if {$mode eq "uploading"} {
-	    $self UploadProgress
-	    $conn filterBegin upload
-	    $conn send "M28 $file"
-	}
+        if {$mode eq "uploading"} {
+            $self UploadProgress
+            $conn filterBegin upload
+            $conn send "M28 $file"
+        }
 
-	after idle $self Send
+        after idle $self Send
     }
 
     destructor {
-	if {$mode ne ""} {
-	    if {$mode eq "uploading"} {
-		$conn send "M29"
-		if {$sent < [llength $data]} {
-		    $conn send "M30 $file"
-		}
-		$conn filterEnd
-		destroy .uploadprogress
-	    } else {
-		$printer status progress -1
-	    }
-	    $printer status mode idle
-	    $conn detach [list $self Send]
-	}
+        if {$mode ne ""} {
+            if {$mode eq "uploading"} {
+                $conn send "M29"
+                if {$sent < [llength $data]} {
+                    $conn send "M30 $file"
+                }
+                $conn filterEnd
+                destroy .uploadprogress
+            } else {
+                $printer status progress -1
+            }
+            $printer status mode idle
+            $conn detach [list $self Send]
+        }
     }
 
     method setRunning {run} {
-	set running $run
-	$self Send
+        set running $run
+        $self Send
     }
 
     method Send {args} { # private
-	while {$running && ![$conn queueFull]} {
-	    if {$sent >= [llength $data]} {
-		$self destroy
-		break
-	    }
-	    $conn send [lindex $data $sent] {*}[expr {$mode ne "uploading" ? {1} : {}}]
-	    incr sent
-	    if {$mode ne "uploading"} {
-		$printer status progress [expr {100.0 * $sent / [llength $data]}]
-	    }
-	}
+        while {$running && ![$conn queueFull]} {
+            if {$sent >= [llength $data]} {
+                $self destroy
+                break
+            }
+            $conn send [lindex $data $sent] {*}[expr {$mode ne "uploading" ? {1} : {}}]
+            incr sent
+            if {$mode ne "uploading"} {
+                $printer status progress [expr {100.0 * $sent / [llength $data]}]
+            }
+        }
     }
 
     method UploadProgress {} { # private
-	toplevel .uploadprogress
+        toplevel .uploadprogress
 
-	progresstime .uploadprogress.progress -variable [myvar sent] -maximum [llength $data]
-	ttk::button .uploadprogress.cancel -text "Cancel" -command [list $self destroy]
-	pack .uploadprogress.progress -fill x -expand 1 -side left
-	pack .uploadprogress.cancel -side left
+        progresstime .uploadprogress.progress -variable [myvar sent] -maximum [llength $data]
+        ttk::button .uploadprogress.cancel -text "Cancel" -command [list $self destroy]
+        pack .uploadprogress.progress -fill x -expand 1 -side left
+        pack .uploadprogress.cancel -side left
 
-	wm title .uploadprogress "Uploading $file..."
-	wm transient .uploadprogress .
-	wm geometry .uploadprogress =300x0+0+0
-	wm deiconify .uploadprogress
+        wm title .uploadprogress "Uploading $file..."
+        wm transient .uploadprogress .
+        wm geometry .uploadprogress =300x0+0+0
+        wm deiconify .uploadprogress
 
-	tkwait visibility .uploadprogress
-	grab .uploadprogress
+        tkwait visibility .uploadprogress
+        grab .uploadprogress
     }
 }
 
@@ -584,50 +584,50 @@ snit::widget calibration {
     variable enabled 0
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	set conn $options(-connection)
+        set conn $options(-connection)
 
-	ttk::checkbutton $win.enable -text "Calibration" -variable [myvar enabled]
-	pack $win.enable -fill x
-	trace add variable enabled write [list $self Toggle]
+        ttk::checkbutton $win.enable -text "Calibration" -variable [myvar enabled]
+        pack $win.enable -fill x
+        trace add variable enabled write [list $self Toggle]
 
-	ttk::frame $win.calibration
-	ttk::button $win.calibration.zprobe -text "z-Probe: Set trim values"           -command [list $conn send "G32 ; z-Probe\nG28 ; Home\nG0 Z100 ; Move 10cm above bed"]
-	ttk::button $win.calibration.height -text "Set max. z from current position"   -command [list $self SetZMax]
-	ttk::button $win.calibration.offset -text "Set z offset from current position" -command [list $conn send "M306 Z0 ; Set z offset from current position\nG28 ; Home\nG0 Z0 ; Move to calibrated position"]
-	ttk::button $win.calibration.save   -text "Save"                               -command [list $conn send "M500 ; Save"]
+        ttk::frame $win.calibration
+        ttk::button $win.calibration.zprobe -text "z-Probe: Set trim values"           -command [list $conn send "G32 ; z-Probe\nG28 ; Home\nG0 Z100 ; Move 10cm above bed"]
+        ttk::button $win.calibration.height -text "Set max. z from current position"   -command [list $self SetZMax]
+        ttk::button $win.calibration.offset -text "Set z offset from current position" -command [list $conn send "M306 Z0 ; Set z offset from current position\nG28 ; Home\nG0 Z0 ; Move to calibrated position"]
+        ttk::button $win.calibration.save   -text "Save"                               -command [list $conn send "M500 ; Save"]
 
-	pack $win.calibration.zprobe $win.calibration.height $win.calibration.offset $win.calibration.save -fill x -expand 1
+        pack $win.calibration.zprobe $win.calibration.height $win.calibration.offset $win.calibration.save -fill x -expand 1
     }
 
     method Toggle {args} { # private
-	if {$enabled} {
-	    pack $win.calibration -fill x
-	} else {
-	    pack forget $win.calibration
-	}
+        if {$enabled} {
+            pack $win.calibration -fill x
+        } else {
+            pack forget $win.calibration
+        }
     }
 
     # set max z based on current position
     method SetZMax {} { # private
-	lassign {"" ""} zMax zPos
-	$conn attach [list $self ReadZMax]
-	$conn print "Calibration: Obtaining current position and max. z...\n"
-	$conn send "M114 ; Get position\nM665 ; Get max. z"
+        lassign {"" ""} zMax zPos
+        $conn attach [list $self ReadZMax]
+        $conn print "Calibration: Obtaining current position and max. z...\n"
+        $conn send "M114 ; Get position\nM665 ; Get max. z"
     }
 
     method ReadZMax {c event data} { # private
-	# todo hack M665 works only on smoothie like this.
-	regexp -line -nocase {Max\s+Z\s+(\d+\.\d+)} $data matched zMax
-	regexp -line {C:*.*Z:\s*(-?\d+\.\d+)} $data matched zPos
-	if {$zMax ne "" && $zPos ne ""} {
-	    set zMax [expr {$zMax - $zPos}]
-	    $conn send [format "M206 Z0 ; Reset z offset\nM665 Z%.3f ; Set new z max\nG28 ; Home\nG0 Z0 ; Move to calibrated position" $zMax]
-	    $conn print "Calibration: New max. z value set, save to finish.\n"
-	    $conn detach [list $self ReadZMax]
-	    lassign {"" ""} zMax zPos
-	}
+        # todo hack M665 works only on smoothie like this.
+        regexp -line -nocase {Max\s+Z\s+(\d+\.\d+)} $data matched zMax
+        regexp -line {C:*.*Z:\s*(-?\d+\.\d+)} $data matched zPos
+        if {$zMax ne "" && $zPos ne ""} {
+            set zMax [expr {$zMax - $zPos}]
+            $conn send [format "M206 Z0 ; Reset z offset\nM665 Z%.3f ; Set new z max\nG28 ; Home\nG0 Z0 ; Move to calibrated position" $zMax]
+            $conn print "Calibration: New max. z value set, save to finish.\n"
+            $conn detach [list $self ReadZMax]
+            lassign {"" ""} zMax zPos
+        }
     }
 }
 
@@ -642,108 +642,108 @@ snit::widget compass {
     variable xyDistance {0.1 1 10 30}
     variable zDistance {0.01 0.1 1 10 50}
     variable color -array {
-	90   "light green"
-	210  "light blue"
-	330  "light salmon"
+        90   "light green"
+        210  "light blue"
+        330  "light salmon"
     }
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	set command $options(-command)
+        set command $options(-command)
 
-	set canvas $win.canvas
-	canvas $canvas -width $width -height $height
-	pack $canvas
+        set canvas $win.canvas
+        canvas $canvas -width $width -height $height
+        pack $canvas
 
-	set h [expr {$height - 1}]
-	set xCenter [expr {$width - $h / 2}]
-	set yCenter [expr {$h / 2 + 1}]
-	set steps [llength $xyDistance]
-	set radiusStep [expr {$h / (2 * $steps + 1)}]
+        set h [expr {$height - 1}]
+        set xCenter [expr {$width - $h / 2}]
+        set yCenter [expr {$h / 2 + 1}]
+        set steps [llength $xyDistance]
+        set radiusStep [expr {$h / (2 * $steps + 1)}]
 
-	for {set i $steps} {$i > 0} {incr i -1} {
-	    set dist [lindex $xyDistance [expr {$i - 1}]]
-	    for {set angle 30} {$angle < 360} {incr angle 60} {
-		set radius [expr {$i * $radiusStep + $radiusStep / 2}]
-		$canvas create arc [expr {$xCenter - $radius}] [expr {$yCenter - $radius}] [expr {$xCenter + $radius}] [expr {$yCenter + $radius}] \
-		    -fill [expr {[info exists color($angle)] ? $color($angle) : "beige"}] -start [expr {$angle - 30}] -extent 60 -tags [list button frame cmd/$angle/$dist]
-	    }
-	    $canvas create text $xCenter [expr {$yCenter - $radius + $radiusStep / 2}] -text $dist -font {-size 6} -tags [list button cmd/90/$dist]
-	}
+        for {set i $steps} {$i > 0} {incr i -1} {
+            set dist [lindex $xyDistance [expr {$i - 1}]]
+            for {set angle 30} {$angle < 360} {incr angle 60} {
+                set radius [expr {$i * $radiusStep + $radiusStep / 2}]
+                $canvas create arc [expr {$xCenter - $radius}] [expr {$yCenter - $radius}] [expr {$xCenter + $radius}] [expr {$yCenter + $radius}] \
+                    -fill [expr {[info exists color($angle)] ? $color($angle) : "beige"}] -start [expr {$angle - 30}] -extent 60 -tags [list button frame cmd/$angle/$dist]
+            }
+            $canvas create text $xCenter [expr {$yCenter - $radius + $radiusStep / 2}] -text $dist -font {-size 6} -tags [list button cmd/90/$dist]
+        }
 
-	$canvas create oval [expr {$xCenter - $radiusStep / 2}] [expr {$yCenter - $radiusStep / 2}] [expr {$xCenter + $radiusStep / 2}] [expr {$yCenter + $radiusStep / 2}] \
-	    -fill "yellow" -tags {button frame cmd/center}
+        $canvas create oval [expr {$xCenter - $radiusStep / 2}] [expr {$yCenter - $radiusStep / 2}] [expr {$xCenter + $radiusStep / 2}] [expr {$yCenter + $radiusStep / 2}] \
+            -fill "yellow" -tags {button frame cmd/center}
 
-	set steps [llength $zDistance]
-	set zStep [expr {$h / (2 * $steps)}]
+        set steps [llength $zDistance]
+        set zStep [expr {$h / (2 * $steps)}]
 
-	for {set i 0} {$i < $steps} {incr i} {
-	    set dist [lindex $zDistance $i]
+        for {set i 0} {$i < $steps} {incr i} {
+            set dist [lindex $zDistance $i]
 
-	    $canvas create rectangle 1 [expr {$h / 2 - $zStep * ($i + 1)}] [expr {$width - $h - 5}] [expr {$h / 2 - $zStep * $i}] \
-		-fill plum -tags button -tags [list button frame cmd/z/$dist]
-	    $canvas create rectangle 1 [expr {$h / 2 + $zStep * ($i + 1)}] [expr {$width - $h - 5}] [expr {$h / 2 + $zStep * $i}] \
-		-fill plum -tags button -tags [list button frame cmd/z/-$dist]
+            $canvas create rectangle 1 [expr {$h / 2 - $zStep * ($i + 1)}] [expr {$width - $h - 5}] [expr {$h / 2 - $zStep * $i}] \
+                -fill plum -tags button -tags [list button frame cmd/z/$dist]
+            $canvas create rectangle 1 [expr {$h / 2 + $zStep * ($i + 1)}] [expr {$width - $h - 5}] [expr {$h / 2 + $zStep * $i}] \
+                -fill plum -tags button -tags [list button frame cmd/z/-$dist]
 
-	    $canvas create text 12 [expr {$h / 2 - $zStep/2 - $zStep * $i}] -text $dist -font {-size 6} -tags [list button cmd/z/$dist]
-	    $canvas create text 12 [expr {$h / 2 + $zStep/2 + $zStep * $i}] -text [expr {-$dist}] -font {-size 6} -tags [list button cmd/z/-$dist]
-	}
+            $canvas create text 12 [expr {$h / 2 - $zStep/2 - $zStep * $i}] -text $dist -font {-size 6} -tags [list button cmd/z/$dist]
+            $canvas create text 12 [expr {$h / 2 + $zStep/2 + $zStep * $i}] -text [expr {-$dist}] -font {-size 6} -tags [list button cmd/z/-$dist]
+        }
 
-	$canvas bind button <Enter> [list $self Enter]
-	$canvas bind button <Leave> [list $self Leave]
-	$canvas bind button <ButtonPress-1> [list $self Press]
-	$canvas bind button <ButtonRelease-1> [list $self Release]
+        $canvas bind button <Enter> [list $self Enter]
+        $canvas bind button <Leave> [list $self Leave]
+        $canvas bind button <ButtonPress-1> [list $self Press]
+        $canvas bind button <ButtonRelease-1> [list $self Release]
     }
 
     method Enter {} { # private
-	lassign [$self Find] cmd item
-	if {$cmd ne ""} {
-	    set lastFill [$canvas itemcget $item -fill]
-	    set lastCmd $cmd
-	    $canvas itemconfigure $item -fill orange
-	}
+        lassign [$self Find] cmd item
+        if {$cmd ne ""} {
+            set lastFill [$canvas itemcget $item -fill]
+            set lastCmd $cmd
+            $canvas itemconfigure $item -fill orange
+        }
     }
 
     method Leave {} { # private
-	lassign [$self Find] cmd item
-	if {$cmd eq $lastCmd} {
-	    $canvas itemconfigure $item -fill $lastFill
-	    lassign {"" ""} lastFill lastCmd
-	}
+        lassign [$self Find] cmd item
+        if {$cmd eq $lastCmd} {
+            $canvas itemconfigure $item -fill $lastFill
+            lassign {"" ""} lastFill lastCmd
+        }
     }
 
     method Release {} { # private
-	lassign [$self Find] cmd item
-	if {$cmd eq $lastCmd} {
-	    $canvas itemconfigure $item -fill orange
-	    if {$cmd eq "center"} {
-		{*}$command {G1 X0 Y0 F$xyspeed ; Move to center}
-	    } elseif {[regexp {z/(.*)} $cmd matched dist]}  {
-		{*}$command [format {G91 ; Relative\nG1 Z%.3f F$zspeed ; Relative move Z %.3fmm\nG90 ; Absolute} $dist $dist]
-	    }  elseif {[regexp {(.*)/(.*)} $cmd matched angle dist]}  {
-		set pi [expr {atan(1) * 4}]
-		set x [expr {$dist * cos($pi * $angle / 180.0)}]
-		set y [expr {$dist * sin($pi * $angle / 180.0)}]
-		{*}$command [format {G91 ; Relative\nG1 X%.3f Y%.3f F$xyspeed ; Move %d° %.3fmm\nG90 ; Absolute} $x $y $angle $dist]
-	    }
-	}
+        lassign [$self Find] cmd item
+        if {$cmd eq $lastCmd} {
+            $canvas itemconfigure $item -fill orange
+            if {$cmd eq "center"} {
+                {*}$command {G1 X0 Y0 F$xyspeed ; Move to center}
+            } elseif {[regexp {z/(.*)} $cmd matched dist]}  {
+                {*}$command [format {G91 ; Relative\nG1 Z%.3f F$zspeed ; Relative move Z %.3fmm\nG90 ; Absolute} $dist $dist]
+            }  elseif {[regexp {(.*)/(.*)} $cmd matched angle dist]}  {
+                set pi [expr {atan(1) * 4}]
+                set x [expr {$dist * cos($pi * $angle / 180.0)}]
+                set y [expr {$dist * sin($pi * $angle / 180.0)}]
+                {*}$command [format {G91 ; Relative\nG1 X%.3f Y%.3f F$xyspeed ; Move %d° %.3fmm\nG90 ; Absolute} $x $y $angle $dist]
+            }
+        }
     }
 
     method Press {} { # private
-	lassign [$self Find] cmd item
-	if {$cmd eq $lastCmd} {
-	    $canvas itemconfigure $item -fill red
-	}
+        lassign [$self Find] cmd item
+        if {$cmd eq $lastCmd} {
+            $canvas itemconfigure $item -fill red
+        }
     }
 
     method Find {} { # private
-	foreach tag [$canvas itemcget current -tags] {
-	    if {[regexp {(cmd/.*)} $tag matched cmd]} {
-		return [list [string range $tag 4 end] [$canvas find withtag "$tag&&frame"]]
-	    }
-	}
-	return {}
+        foreach tag [$canvas itemcget current -tags] {
+            if {[regexp {(cmd/.*)} $tag matched cmd]} {
+                return [list [string range $tag 4 end] [$canvas find withtag "$tag&&frame"]]
+            }
+        }
+        return {}
     }
 }
 
@@ -769,155 +769,155 @@ snit::widget spider {
     variable mouseY 0
     variable last ""
     variable color -array {
-	90  green
-	210 blue
-	330 red
+        90  green
+        210 blue
+        330 red
     }
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	set printer $options(-printer)
-	set command $options(-command)
+        set printer $options(-printer)
+        set command $options(-command)
 
-	set canvas $win.canvas
-	canvas $canvas -width $width -height $height
-	pack $canvas
+        set canvas $win.canvas
+        canvas $canvas -width $width -height $height
+        pack $canvas
 
-	set h [expr {$height - 1}]
-	set xCenter [expr {$width - $h / 2}]
-	set yCenter [expr {$h / 2 + 2}]
+        set h [expr {$height - 1}]
+        set xCenter [expr {$width - $h / 2}]
+        set yCenter [expr {$h / 2 + 2}]
 
-	$canvas bind button <ButtonPress-1> [list $self Press %x %y]
-	$canvas bind button <ButtonRelease-1> [list $self Release %x %y]
+        $canvas bind button <ButtonPress-1> [list $self Press %x %y]
+        $canvas bind button <ButtonRelease-1> [list $self Release %x %y]
 
-	foreach event {Enter Leave Motion B1-Motion} {
-	    $canvas bind button <$event> [list $self UpdateMouse %x %y]
-	}
+        foreach event {Enter Leave Motion B1-Motion} {
+            $canvas bind button <$event> [list $self UpdateMouse %x %y]
+        }
 
-	every 250 $self Update
+        every 250 $self Update
     }
 
     method Update {} { # private
-	set armRadius [expr {[$printer status armRadius -default 120] - $armRadiusSafety}]
-	set zMax [$printer status zMax -default 200]
-	set x [expr {$xCenter + $h/2 * [$printer status x -default 0] / $armRadius}]
-	set y [expr {$yCenter - $h/2 * [$printer status y -default 0] / $armRadius}]
-	set z [$printer status z -default $zMax]
-	set zPixel [expr {$h - $h * $z / $zMax + 1}]
+        set armRadius [expr {[$printer status armRadius -default 120] - $armRadiusSafety}]
+        set zMax [$printer status zMax -default 200]
+        set x [expr {$xCenter + $h/2 * [$printer status x -default 0] / $armRadius}]
+        set y [expr {$yCenter - $h/2 * [$printer status y -default 0] / $armRadius}]
+        set z [$printer status z -default $zMax]
+        set zPixel [expr {$h - $h * $z / $zMax + 1}]
 
-	$self DrawBackground $armRadius $zMax
-	$self DrawPath $x $y $z
-	$self DrawLine {level button} [list 2 $zPixel [expr {$width - $h - 5}] $zPixel] -width 3 -fill DeepPink4
-	$self DrawArm arm $x $y
+        $self DrawBackground $armRadius $zMax
+        $self DrawPath $x $y $z
+        $self DrawLine {level button} [list 2 $zPixel [expr {$width - $h - 5}] $zPixel] -width 3 -fill DeepPink4
+        $self DrawArm arm $x $y
 
-	foreach tag {path line arm level mouse label} {
-	    $canvas raise $tag
-	}
+        foreach tag {path line arm level mouse label} {
+            $canvas raise $tag
+        }
     }
 
     method DrawPath {x y z} { # private
-	if {$lastZ != $z} {
-	    $canvas delete path
-	    set path {}
-	    set lastZ $z
-	}
+        if {$lastZ != $z} {
+            $canvas delete path
+            set path {}
+            set lastZ $z
+        }
 
-	if {[llength $path] > 0} {
-	    lassign [lindex $path end-1 end] lastX lastY
-	    if {$x != $lastX || $y != $lastY} {
-		lappend path $x $y
-		$self DrawLine path $path -fill "dark orange"
-	    }
-	} else {
-	    lappend path $x $y
-	}
+        if {[llength $path] > 0} {
+            lassign [lindex $path end-1 end] lastX lastY
+            if {$x != $lastX || $y != $lastY} {
+                lappend path $x $y
+                $self DrawLine path $path -fill "dark orange"
+            }
+        } else {
+            lappend path $x $y
+        }
     }
 
     method DrawBackground {armRadius zMax} { # private
-	$canvas delete bg
+        $canvas delete bg
 
-	$canvas create oval [expr {$xCenter - $h/2}] [expr {$yCenter - $h/2}] [expr {$xCenter + $h/2}] [expr {$yCenter + $h/2}] -fill white -tags {bg button}
-	$canvas create line $xCenter [expr {$yCenter - $h / 2}] $xCenter [expr {$yCenter + $h / 2}] -tags {bg button} -fill gray
-	$canvas create line [expr {$xCenter - $h / 2}] $yCenter [expr {$xCenter + $h / 2}] $yCenter -tags {bg button} -fill gray
+        $canvas create oval [expr {$xCenter - $h/2}] [expr {$yCenter - $h/2}] [expr {$xCenter + $h/2}] [expr {$yCenter + $h/2}] -fill white -tags {bg button}
+        $canvas create line $xCenter [expr {$yCenter - $h / 2}] $xCenter [expr {$yCenter + $h / 2}] -tags {bg button} -fill gray
+        $canvas create line [expr {$xCenter - $h / 2}] $yCenter [expr {$xCenter + $h / 2}] $yCenter -tags {bg button} -fill gray
 
-	for {set radius $armRadiusRing} {$radius <= $armRadius} {incr radius $armRadiusRing} {
-	    set r [expr {$radius * $h / (2 * $armRadius)}]
-	    if {$radius < $armRadius - $armRadiusRing / 3} {
-		$canvas create oval [expr {$xCenter - $r}] [expr {$yCenter - $r}] [expr {$xCenter + $r}] [expr {$yCenter + $r}] -tags {bg button}
-	    }
-	    $canvas create text $xCenter [expr {$yCenter - $r + $armRadiusRing * $h / (4 * $armRadius)}] -text [expr {$radius / 10}] -tags {bg button label} -font {-size 6}
-	}
+        for {set radius $armRadiusRing} {$radius <= $armRadius} {incr radius $armRadiusRing} {
+            set r [expr {$radius * $h / (2 * $armRadius)}]
+            if {$radius < $armRadius - $armRadiusRing / 3} {
+                $canvas create oval [expr {$xCenter - $r}] [expr {$yCenter - $r}] [expr {$xCenter + $r}] [expr {$yCenter + $r}] -tags {bg button}
+            }
+            $canvas create text $xCenter [expr {$yCenter - $r + $armRadiusRing * $h / (4 * $armRadius)}] -text [expr {$radius / 10}] -tags {bg button label} -font {-size 6}
+        }
 
-	$canvas create rectangle 1 1 [expr {$width - $h - 5}] $height -fill white -tags {bg button}
-	for {set z $zStep} {$z <= $zMax} {incr z $zStep} {
-	    set zPixel [expr {$h - $h * $z / $zMax + 1}]
-	    if {$z < $zMax - $zStep / 3} {
-		$canvas create line 1 $zPixel [expr {$width - $h - 5}] $zPixel -fill black -tags {bg button}
-	    }
-	    $canvas create text [expr {($width - $h - 5) / 2}] [expr {$zPixel + $zStep * $h / (2 * $zMax)}] -text [expr {$z / 10}] -tags {bg button label} -font {-size 6}
-	}
+        $canvas create rectangle 1 1 [expr {$width - $h - 5}] $height -fill white -tags {bg button}
+        for {set z $zStep} {$z <= $zMax} {incr z $zStep} {
+            set zPixel [expr {$h - $h * $z / $zMax + 1}]
+            if {$z < $zMax - $zStep / 3} {
+                $canvas create line 1 $zPixel [expr {$width - $h - 5}] $zPixel -fill black -tags {bg button}
+            }
+            $canvas create text [expr {($width - $h - 5) / 2}] [expr {$zPixel + $zStep * $h / (2 * $zMax)}] -text [expr {$z / 10}] -tags {bg button label} -font {-size 6}
+        }
     }
 
     method DrawLine {tags coords args} { # private
-	if {[$canvas gettags [set id [lindex $tags 0]]] ne ""} {
-	    $canvas coords $id {*}$coords
-	} else {
-	    $canvas create line {*}$coords -tags $tags {*}$args
-	}
+        if {[$canvas gettags [set id [lindex $tags 0]]] ne ""} {
+            $canvas coords $id {*}$coords
+        } else {
+            $canvas create line {*}$coords -tags $tags {*}$args
+        }
     }
 
     method DrawArm {tags x y args} { # private
-	for {set angle 90} {$angle < 360} {incr angle 120} {
-	    set pi [expr {atan(1) * 4}]
-	    set id "[lindex $tags 0]$angle"
-	    $self DrawLine [list $id {*}$tags button] \
-		[list $x $y \
-		     [expr {$xCenter + $h/2 * cos($pi * $angle / 180.0)}] \
-		     [expr {$yCenter - $h/2 * sin($pi * $angle / 180.0)}]] \
-		-width 2 -fill $color($angle) {*}$args
-	}
+        for {set angle 90} {$angle < 360} {incr angle 120} {
+            set pi [expr {atan(1) * 4}]
+            set id "[lindex $tags 0]$angle"
+            $self DrawLine [list $id {*}$tags button] \
+                [list $x $y \
+                     [expr {$xCenter + $h/2 * cos($pi * $angle / 180.0)}] \
+                     [expr {$yCenter - $h/2 * sin($pi * $angle / 180.0)}]] \
+                -width 2 -fill $color($angle) {*}$args
+        }
     }
 
     method Press {x y} { # private
-	$canvas itemconfigure mouse -fill red -dash 255
+        $canvas itemconfigure mouse -fill red -dash 255
 
-	set last ""
-	if {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2} {
-	    set last xy
-	} elseif {$x < $width - $h - 5} {
-	    set last z
-	}
+        set last ""
+        if {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2} {
+            set last xy
+        } elseif {$x < $width - $h - 5} {
+            set last z
+        }
     }
 
     method Release {x y} { # private
-	if {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2 && $last eq "xy"} {
-	    set armRadius [expr {[$printer status armRadius -default 120] - $armRadiusSafety}]
-	    set xPos [expr {$armRadius * ($x - $xCenter) / ($h / 2)}]
-	    set yPos [expr {-$armRadius * ($y - $yCenter) / ($h / 2)}]
-	    {*}$command [format {G1 X%.3f Y%.3f F$xyspeed ; Absolute move} $xPos $yPos]
-	} elseif {$x < $width - $h - 5 && $last eq "z"}  {
-	    set zMax [$printer status zMax -default 200]
-	    set zPos [expr {max(0, min($zMax, $zMax * ($h - $y) / $h))}]
-	    {*}$command [format {G1 Z%.3f F$zspeed ; Absolute move} $zPos]
-	}
-	set last ""
-	$canvas delete mouse
-	$self UpdateMouse $x $y 1
+        if {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2 && $last eq "xy"} {
+            set armRadius [expr {[$printer status armRadius -default 120] - $armRadiusSafety}]
+            set xPos [expr {$armRadius * ($x - $xCenter) / ($h / 2)}]
+            set yPos [expr {-$armRadius * ($y - $yCenter) / ($h / 2)}]
+            {*}$command [format {G1 X%.3f Y%.3f F$xyspeed ; Absolute move} $xPos $yPos]
+        } elseif {$x < $width - $h - 5 && $last eq "z"}  {
+            set zMax [$printer status zMax -default 200]
+            set zPos [expr {max(0, min($zMax, $zMax * ($h - $y) / $h))}]
+            {*}$command [format {G1 Z%.3f F$zspeed ; Absolute move} $zPos]
+        }
+        set last ""
+        $canvas delete mouse
+        $self UpdateMouse $x $y 1
     }
 
     method UpdateMouse {x y {force 0}} { # private
-	if {$x != $mouseX || $y != $mouseY || $force} {
-	    if {$x < $width - $h - 5} {
-		$self DrawLine {mouse button} [list 2 $y [expr {$width - $h - 5}] $y] -width 3 -fill DeepPink4 -dash {2 4}
-	    } elseif {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2} {
-		$self DrawArm mouse $x $y -dash {2 4}
-	    } else {
-		$canvas delete mouse
-	    }
-	    set mouseX $x
-	    set mouseY $y
-	}
+        if {$x != $mouseX || $y != $mouseY || $force} {
+            if {$x < $width - $h - 5} {
+                $self DrawLine {mouse button} [list 2 $y [expr {$width - $h - 5}] $y] -width 3 -fill DeepPink4 -dash {2 4}
+            } elseif {($x-$xCenter)**2 + ($y-$yCenter)**2 < ($h/2)**2} {
+                $self DrawArm mouse $x $y -dash {2 4}
+            } else {
+                $canvas delete mouse
+            }
+            set mouseX $x
+            set mouseY $y
+        }
     }
 }
 
@@ -929,38 +929,38 @@ snit::widget motion {
     variable xyspeed 5000
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
- 	$hull configure -text "Motion"
+        $hull configure -text "Motion"
 
-	set conn $options(-connection)
+        set conn $options(-connection)
 
-	ttk::frame  $win.0
-	ttk::button $win.0.home      -text "Home"           -width 5 -command [list $conn command $selfns {G28 ; Home}]
-	ttk::button $win.0.bedcenter -text "Bed center"     -command [list $conn command $selfns {G1 X0 Y0 Z0 F$xyspeed ; Move to center of bed}]
-	ttk::button $win.0.motoron   -text "Motors on"      -command [list $conn command $selfns {M17 ; Motors on}]
-	ttk::button $win.0.bed       -text "Bed"            -width 4 -command [list $conn command $selfns {G1 Z0 F$zspeed ; Move to bed}]
-	ttk::button $win.0.abovebed  -text "10cm above bed" -command [list $conn command $selfns {G1 X0 Y0 Z100 F$zspeed ; Move 10cm above bed}]
-	ttk::button $win.0.motoroff  -text "Motors off"     -command [list $conn command $selfns {M18 ; Motors off}]
-	grid $win.0.home $win.0.bedcenter $win.0.motoron  -sticky news
-	grid $win.0.bed  $win.0.abovebed  $win.0.motoroff -sticky news
+        ttk::frame  $win.0
+        ttk::button $win.0.home      -text "Home"           -width 5 -command [list $conn command $selfns {G28 ; Home}]
+        ttk::button $win.0.bedcenter -text "Bed center"     -command [list $conn command $selfns {G1 X0 Y0 Z0 F$xyspeed ; Move to center of bed}]
+        ttk::button $win.0.motoron   -text "Motors on"      -command [list $conn command $selfns {M17 ; Motors on}]
+        ttk::button $win.0.bed       -text "Bed"            -width 4 -command [list $conn command $selfns {G1 Z0 F$zspeed ; Move to bed}]
+        ttk::button $win.0.abovebed  -text "10cm above bed" -command [list $conn command $selfns {G1 X0 Y0 Z100 F$zspeed ; Move 10cm above bed}]
+        ttk::button $win.0.motoroff  -text "Motors off"     -command [list $conn command $selfns {M18 ; Motors off}]
+        grid $win.0.home $win.0.bedcenter $win.0.motoron  -sticky news
+        grid $win.0.bed  $win.0.abovebed  $win.0.motoroff -sticky news
 
-	calibration $win.calibration -connection $conn
+        calibration $win.calibration -connection $conn
 
-	compass $win.compass -command [list $conn command $selfns]
-	spider $win.spider -printer $options(-printer) -command [list $conn command $selfns]
+        compass $win.compass -command [list $conn command $selfns]
+        spider $win.spider -printer $options(-printer) -command [list $conn command $selfns]
 
-	ttk::frame   $win.1
-	ttk::label   $win.1.zl1 -text "z:"
-	ttk::spinbox $win.1.zs  -from 100 -to 5000 -increment 100 -width 5 -validate all -validatecommand {string is integer %P} -textvariable [myvar zspeed]
-	ttk::label   $win.1.zl2 -text "mm/    \nmin" -font {-size 6} -anchor w
-	ttk::label   $win.1.xyl1 -text "xy:" -width 5 -anchor e
-	ttk::spinbox $win.1.xys -from 100 -to 5000 -increment 100 -width 5 -validate all -validatecommand {string is integer %P} -textvariable [myvar xyspeed]
+        ttk::frame   $win.1
+        ttk::label   $win.1.zl1 -text "z:"
+        ttk::spinbox $win.1.zs  -from 100 -to 5000 -increment 100 -width 5 -validate all -validatecommand {string is integer %P} -textvariable [myvar zspeed]
+        ttk::label   $win.1.zl2 -text "mm/    \nmin" -font {-size 6} -anchor w
+        ttk::label   $win.1.xyl1 -text "xy:" -width 5 -anchor e
+        ttk::spinbox $win.1.xys -from 100 -to 5000 -increment 100 -width 5 -validate all -validatecommand {string is integer %P} -textvariable [myvar xyspeed]
 
-	ttk::label  $win.1.xyl2 -text "mm/    \nmin" -font {-size 6} -anchor w
-	pack $win.1.zl1 $win.1.zs $win.1.zl2 $win.1.xyl1 $win.1.xys $win.1.xyl2 -side left
+        ttk::label  $win.1.xyl2 -text "mm/    \nmin" -font {-size 6} -anchor w
+        pack $win.1.zl1 $win.1.zs $win.1.zl2 $win.1.xyl1 $win.1.xys $win.1.xyl2 -side left
 
-	pack $win.0 $win.calibration $win.compass $win.spider $win.1 -fill x
+        pack $win.0 $win.calibration $win.compass $win.spider $win.1 -fill x
     }
 }
 
@@ -984,142 +984,142 @@ snit::widget timeplot {
     variable vars -array {}
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	foreach var {height width timedomain timetick yticks} {
-	    set $var $options(-$var)
-	}
+        foreach var {height width timedomain timetick yticks} {
+            set $var $options(-$var)
+        }
 
-	if {$options(-title) ne ""} {
-	    ttk::label $win.title -text $options(-title) -font {-size 8}
-	}
+        if {$options(-title) ne ""} {
+            ttk::label $win.title -text $options(-title) -font {-size 8}
+        }
 
-	set canvas $win.canvas
-	canvas $canvas -width $width -height $height -bg white -borderwidth 1 -relief sunken
-	ttk::frame $win.legend
-	pack $win.title $canvas -fill both
-	pack $win.legend -fill x
+        set canvas $win.canvas
+        canvas $canvas -width $width -height $height -bg white -borderwidth 1 -relief sunken
+        ttk::frame $win.legend
+        pack $win.title $canvas -fill both
+        pack $win.legend -fill x
 
-	every 250 $self Update
+        every 250 $self Update
     }
 
     method add {var l s} {
-	set col [expr {[array size vars] % 2}]
-	set row [expr {[array size vars] / 2}]
-	set vars($var) $s
-	canvas $win.legend.line$var -width 15 -height 10
-	$win.legend.line$var create line 1 5 15 5 {*}$s
-	ttk::label $win.legend.label$var -text "$l " -font {-size 6}
-	grid $win.legend.line$var -row $row -column [expr {2 * $col}]
-	grid $win.legend.label$var -row $row -column [expr {2 * $col + 1}]
+        set col [expr {[array size vars] % 2}]
+        set row [expr {[array size vars] / 2}]
+        set vars($var) $s
+        canvas $win.legend.line$var -width 15 -height 10
+        $win.legend.line$var create line 1 5 15 5 {*}$s
+        ttk::label $win.legend.label$var -text "$l " -font {-size 6}
+        grid $win.legend.line$var -row $row -column [expr {2 * $col}]
+        grid $win.legend.label$var -row $row -column [expr {2 * $col + 1}]
     }
 
     method Update {} { # private
-	set timeEnd [expr {[clock milliseconds] * 0.001}]
-	set timeStart [expr {$timeEnd - $timedomain}]
+        set timeEnd [expr {[clock milliseconds] * 0.001}]
+        set timeStart [expr {$timeEnd - $timedomain}]
 
-	lassign {1e9 -1e9} ymin ymax
-	foreach var [array names vars] {
-	    if {![info exists $var]} {
-		continue
-	    }
+        lassign {1e9 -1e9} ymin ymax
+        foreach var [array names vars] {
+            if {![info exists $var]} {
+                continue
+            }
 
-	    if {![info exists values($var)]} {
-		set values($var) {}
-	    }
+            if {![info exists values($var)]} {
+                set values($var) {}
+            }
 
-	    # add new value
-	    lappend values($var) $timeEnd [set y [set $var]]
+            # add new value
+            lappend values($var) $timeEnd [set y [set $var]]
 
-	    # remove obsolete values
-	    set i -1
-	    foreach {t y} $values($var) {
-		if {$t > $timeStart} {
-		    if {$i > 0} {
-			set values($var) [lreplace $values($var) 0 $i]
-		    }
-		    break
-		}
-		incr i 2
-	    }
+            # remove obsolete values
+            set i -1
+            foreach {t y} $values($var) {
+                if {$t > $timeStart} {
+                    if {$i > 0} {
+                        set values($var) [lreplace $values($var) 0 $i]
+                    }
+                    break
+                }
+                incr i 2
+            }
 
-	    # find range
-	    foreach {t y} $values($var) {
-		if {$y < $ymin} { set ymin $y }
-		if {$y > $ymax} { set ymax $y }
-	    }
-	}
+            # find range
+            foreach {t y} $values($var) {
+                if {$y < $ymin} { set ymin $y }
+                if {$y > $ymax} { set ymax $y }
+            }
+        }
 
-	if {$ymin >= $ymax} {
-	    # empty range
-	    lassign {-1.0 1.0} ymin ymax
-	} else {
-	    # always include 0
-	    if {$ymin > 0} { set ymin 0 }
-	    if {$ymax < 0} { set ymax 0 }
-	}
+        if {$ymin >= $ymax} {
+            # empty range
+            lassign {-1.0 1.0} ymin ymax
+        } else {
+            # always include 0
+            if {$ymin > 0} { set ymin 0 }
+            if {$ymax < 0} { set ymax 0 }
+        }
 
-	# dimension - power of 10
-	set max [expr {max(abs($ymin), abs($ymax))}]
-	set dim [expr {log10($max)}]
-	set dim [expr {10 ** (int($dim) + ($dim - int($dim) > log10(5) ? 1 : 0))}]
+        # dimension - power of 10
+        set max [expr {max(abs($ymin), abs($ymax))}]
+        set dim [expr {log10($max)}]
+        set dim [expr {10 ** (int($dim) + ($dim - int($dim) > log10(5) ? 1 : 0))}]
 
-	# min and max are multiple of dimension
-	set ytickMin [expr {$dim * floor(double($ymin) / $dim)}]
-	set ytickMax [expr {$dim * ceil(double($ymax) / $dim)}]
-	set ytickDelta [expr {$ytickMax - $ytickMin}]
+        # min and max are multiple of dimension
+        set ytickMin [expr {$dim * floor(double($ymin) / $dim)}]
+        set ytickMax [expr {$dim * ceil(double($ymax) / $dim)}]
+        set ytickDelta [expr {$ytickMax - $ytickMin}]
 
-	# todo hack determine nice divisor of ytickDelta
-	set ticks {}
-	for {set i [expr {int(round(0.5 * $yticks))}]} {$i <= int(round(1.5 * $yticks))} {incr i} {
-	    lappend ticks [list $i [expr {(int(ceil(100 * $ytickDelta / $dim)) % $i == 0) +
-					  (int(ceil(100 * $ytickMax / $dim)) % (int(ceil(100 * $ytickDelta / $dim)) / $i) == 0) +
-					  (int(ceil(100 * $ytickMin / $dim)) % (int(ceil(100 * $ytickDelta / $dim)) / $i) == 0) -
-				          0.1 * abs($yticks - $i)}]]
-	}
-	set ticks [lindex [lsort -real -index 1 $ticks] end 0]
+        # todo hack determine nice divisor of ytickDelta
+        set ticks {}
+        for {set i [expr {int(round(0.5 * $yticks))}]} {$i <= int(round(1.5 * $yticks))} {incr i} {
+            lappend ticks [list $i [expr {(int(ceil(100 * $ytickDelta / $dim)) % $i == 0) +
+                                          (int(ceil(100 * $ytickMax / $dim)) % (int(ceil(100 * $ytickDelta / $dim)) / $i) == 0) +
+                                          (int(ceil(100 * $ytickMin / $dim)) % (int(ceil(100 * $ytickDelta / $dim)) / $i) == 0) -
+                                          0.1 * abs($yticks - $i)}]]
+        }
+        set ticks [lindex [lsort -real -index 1 $ticks] end 0]
 
-	# add offset
-	set ydelta [expr {$ymax - $ymin}]
-	set ymin [expr {$ymin - $ydelta / 8.0}]
-	set ymax [expr {$ymax + $ydelta / 8.0}]
-	set ydelta [expr {$ymax - $ymin}]
+        # add offset
+        set ydelta [expr {$ymax - $ymin}]
+        set ymin [expr {$ymin - $ydelta / 8.0}]
+        set ymax [expr {$ymax + $ydelta / 8.0}]
+        set ydelta [expr {$ymax - $ymin}]
 
-	set yscale [expr {double($height) / $ydelta}]
-	set tscale [expr {double($width) / $timedomain}]
+        set yscale [expr {double($height) / $ydelta}]
+        set tscale [expr {double($width) / $timedomain}]
 
-	# draw grid
-	$canvas delete grid
-	for {set t [expr {$timeStart + $timetick}]} {$t < $timeEnd} {set t [expr {$t + $timetick}]} {
-	    set x [expr {($t - $timeStart) * $tscale + 5}]
-	    $canvas create line $x 0 $x $height -tags grid -fill gray
-	    $canvas create text $x [expr {$height - 4}] -text "[expr {int($timeEnd - $t)}]s" -font {-size 6} -tags {grid label}
-	}
+        # draw grid
+        $canvas delete grid
+        for {set t [expr {$timeStart + $timetick}]} {$t < $timeEnd} {set t [expr {$t + $timetick}]} {
+            set x [expr {($t - $timeStart) * $tscale + 5}]
+            $canvas create line $x 0 $x $height -tags grid -fill gray
+            $canvas create text $x [expr {$height - 4}] -text "[expr {int($timeEnd - $t)}]s" -font {-size 6} -tags {grid label}
+        }
 
-	# draw other lines
-	for {set i -1} {$i <= $ticks + 1} {incr i} { # hack -1 +1 because of added offset
-	    set val [expr {$ytickMin + $i * ($ytickMax - $ytickMin) / $ticks}]
-	    set y [expr {$height - ($val - $ymin) * $yscale}]
-	    $canvas create line 0 $y $width $y -tags grid -fill gray
+        # draw other lines
+        for {set i -1} {$i <= $ticks + 1} {incr i} { # hack -1 +1 because of added offset
+            set val [expr {$ytickMin + $i * ($ytickMax - $ytickMin) / $ticks}]
+            set y [expr {$height - ($val - $ymin) * $yscale}]
+            $canvas create line 0 $y $width $y -tags grid -fill gray
 
-	    if {$y > 5 && $y < $height - 5} {
-		$canvas create text 15 $y -text [format "%.1f" $val] -tags {grid label} -font {-size 6}
-	    }
-	}
+            if {$y > 5 && $y < $height - 5} {
+                $canvas create text 15 $y -text [format "%.1f" $val] -tags {grid label} -font {-size 6}
+            }
+        }
 
-	# draw curves
-	$canvas delete curve
-	foreach {var vals} [array get values] {
-	    set line {}
-	    foreach {t y} $vals {
-		lappend line [expr {int(($t - $timeStart) * $tscale)}] [expr {$height - int(($y - $ymin) * $yscale)}]
-	    }
-	    if {[llength $line] >= 4} {
-		$canvas create line {*}$line -tags curve {*}$vars($var)
-	    }
-	}
+        # draw curves
+        $canvas delete curve
+        foreach {var vals} [array get values] {
+            set line {}
+            foreach {t y} $vals {
+                lappend line [expr {int(($t - $timeStart) * $tscale)}] [expr {$height - int(($y - $ymin) * $yscale)}]
+            }
+            if {[llength $line] >= 4} {
+                $canvas create line {*}$line -tags curve {*}$vars($var)
+            }
+        }
 
-	$canvas raise label
+        $canvas raise label
     }
 }
 
@@ -1131,41 +1131,41 @@ snit::widget temperature {
     variable bedTargetTemp 0
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	set conn $options(-connection)
+        set conn $options(-connection)
 
-	$hull configure -text "Temperature"
+        $hull configure -text "Temperature"
 
-	timeplot $win.tempPlot -title "Temperature (°C)"
-	timeplot $win.tempDeltaPlot -title "Temperature deviation (°C)"
-	timeplot $win.heaterPlot -title "Heater PWM"
+        timeplot $win.tempPlot -title "Temperature (°C)"
+        timeplot $win.tempDeltaPlot -title "Temperature deviation (°C)"
+        timeplot $win.heaterPlot -title "Heater PWM"
 
-	ttk::frame $win.0
-	ttk::label  $win.0.hotend1 -text "Hotend:"
-	ttk::spinbox $win.0.hotendTargetTemp -from 0 -to 250 -increment 5 -width 3 -validate all -validatecommand {string is double %P} -textvariable [myvar hotendTargetTemp]
-	ttk::label  $win.0.hotend2 -text "°C  " -anchor w
-	ttk::button $win.0.hotendSet -text "Set" -width 3 -command [list $conn command $selfns {M104 S$hotendTargetTemp ; Set hotend temperature}]
+        ttk::frame $win.0
+        ttk::label  $win.0.hotend1 -text "Hotend:"
+        ttk::spinbox $win.0.hotendTargetTemp -from 0 -to 250 -increment 5 -width 3 -validate all -validatecommand {string is double %P} -textvariable [myvar hotendTargetTemp]
+        ttk::label  $win.0.hotend2 -text "°C  " -anchor w
+        ttk::button $win.0.hotendSet -text "Set" -width 3 -command [list $conn command $selfns {M104 S$hotendTargetTemp ; Set hotend temperature}]
 
-	ttk::label  $win.0.bed1 -text "Bed:"
-	ttk::spinbox $win.0.bedTargetTemp -from 0 -to 150 -increment 5 -width 3 -validate all -validatecommand {string is double %P} -textvariable [myvar bedTargetTemp]
-	ttk::label  $win.0.bed2 -text "°C  " -anchor w
-	ttk::button $win.0.bedSet -text "Set" -width 3 -command [list $conn command $selfns {M140 S$bedTargetTemp ; Set bed temperature}]
+        ttk::label  $win.0.bed1 -text "Bed:"
+        ttk::spinbox $win.0.bedTargetTemp -from 0 -to 150 -increment 5 -width 3 -validate all -validatecommand {string is double %P} -textvariable [myvar bedTargetTemp]
+        ttk::label  $win.0.bed2 -text "°C  " -anchor w
+        ttk::button $win.0.bedSet -text "Set" -width 3 -command [list $conn command $selfns {M140 S$bedTargetTemp ; Set bed temperature}]
 
-	grid $win.0.hotend1 $win.0.hotendTargetTemp $win.0.hotend2 $win.0.hotendSet -sticky news
-	grid $win.0.bed1 $win.0.bedTargetTemp $win.0.bed2 $win.0.bedSet -sticky news
-	pack $win.tempPlot $win.tempDeltaPlot $win.heaterPlot $win.0
+        grid $win.0.hotend1 $win.0.hotendTargetTemp $win.0.hotend2 $win.0.hotendSet -sticky news
+        grid $win.0.bed1 $win.0.bedTargetTemp $win.0.bed2 $win.0.bedSet -sticky news
+        pack $win.tempPlot $win.tempDeltaPlot $win.heaterPlot $win.0
 
-	set printer $options(-printer)
-	foreach {var style} {bedTemp {-fill blue} bedTargetTemp {-fill blue -dash {2 2}} hotendTemp {-fill red} hotendTargetTemp {-fill red -dash {2 2}}} {
-	    $win.tempPlot add [$printer statusvar $var] [printer statuslegend $var] $style
-	}
-	foreach {var style} {bedDeltaTemp {-fill blue} hotendDeltaTemp {-fill red}} {
-	    $win.tempDeltaPlot add [$printer statusvar $var] [printer statuslegend $var] $style
-	}
-	foreach {var style} {bedHeater {-fill blue} hotendHeater {-fill red}} {
-	    $win.heaterPlot add [$printer statusvar $var] [printer statuslegend $var] $style
-	}
+        set printer $options(-printer)
+        foreach {var style} {bedTemp {-fill blue} bedTargetTemp {-fill blue -dash {2 2}} hotendTemp {-fill red} hotendTargetTemp {-fill red -dash {2 2}}} {
+            $win.tempPlot add [$printer statusvar $var] [printer statuslegend $var] $style
+        }
+        foreach {var style} {bedDeltaTemp {-fill blue} hotendDeltaTemp {-fill red}} {
+            $win.tempDeltaPlot add [$printer statusvar $var] [printer statuslegend $var] $style
+        }
+        foreach {var style} {bedHeater {-fill blue} hotendHeater {-fill red}} {
+            $win.heaterPlot add [$printer statusvar $var] [printer statuslegend $var] $style
+        }
     }
 }
 
@@ -1176,23 +1176,23 @@ snit::widget extruder {
     variable speed 500
 
     constructor {args} {
-	$self configurelist $args
-	set conn $options(-connection)
+        $self configurelist $args
+        set conn $options(-connection)
 
         $hull configure -text "Extruder"
 
-	ttk::label  $win.speedl1 -text "Speed:"
-	ttk::label  $win.speedl2 -text "mm/       \nmin" -font {-size 6} -anchor w
-	ttk::spinbox $win.speed -from 60 -to 1000 -width 5 -increment 60 -validate all -validatecommand {string is integer %P} -textvariable [myvar speed]
-	ttk::button $win.extrude -text "Extrude" -command [list $conn command $selfns {M83 ; Relative\nG1 E$length F$speed ; Extrude\nM82 ; Absolute}]
+        ttk::label  $win.speedl1 -text "Speed:"
+        ttk::label  $win.speedl2 -text "mm/       \nmin" -font {-size 6} -anchor w
+        ttk::spinbox $win.speed -from 60 -to 1000 -width 5 -increment 60 -validate all -validatecommand {string is integer %P} -textvariable [myvar speed]
+        ttk::button $win.extrude -text "Extrude" -command [list $conn command $selfns {M83 ; Relative\nG1 E$length F$speed ; Extrude\nM82 ; Absolute}]
 
-	ttk::label  $win.lengthl1 -text "Length:" -anchor w
-	ttk::label  $win.lengthl2 -text "mm    " -anchor w
-	ttk::spinbox $win.length -from 1 -to 3000 -width 5 -increment 10 -validate all -validatecommand {string is integer %P} -textvariable [myvar length]
-	ttk::button $win.retract -text "Retract" -command [list $conn command $selfns {M83 ; Relative\nG1 E-$length F$speed ; Retract\nM82 ; Absolute}]
+        ttk::label  $win.lengthl1 -text "Length:" -anchor w
+        ttk::label  $win.lengthl2 -text "mm    " -anchor w
+        ttk::spinbox $win.length -from 1 -to 3000 -width 5 -increment 10 -validate all -validatecommand {string is integer %P} -textvariable [myvar length]
+        ttk::button $win.retract -text "Retract" -command [list $conn command $selfns {M83 ; Relative\nG1 E-$length F$speed ; Retract\nM82 ; Absolute}]
 
-	grid $win.speedl1 $win.speed $win.speedl2 $win.extrude
-	grid $win.lengthl1 $win.length $win.lengthl2 $win.retract
+        grid $win.speedl1 $win.speed $win.speedl2 $win.extrude
+        grid $win.lengthl1 $win.length $win.lengthl2 $win.retract
     }
 }
 
@@ -1208,110 +1208,110 @@ snit::widget player {
     variable feedspeed 100
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	$hull configure -text "Player"
+        $hull configure -text "Player"
 
-	set conn $options(-connection)
-	set printer $options(-printer)
+        set conn $options(-connection)
+        set printer $options(-printer)
 
-	ttk::frame $win.0
-	listbox $win.0.files -height 5 -listvariable [$printer statusvar files] -yscrollcommand [list $win.0.scroll set]
-	ttk::scrollbar $win.0.scroll -orient vertical -command [list $win.0.files yview]
-	autoscroll::autoscroll $win.0.scroll
-	pack $win.0.files -side left -fill both -expand 1
-	pack $win.0.scroll -side left -fill y
+        ttk::frame $win.0
+        listbox $win.0.files -height 5 -listvariable [$printer statusvar files] -yscrollcommand [list $win.0.scroll set]
+        ttk::scrollbar $win.0.scroll -orient vertical -command [list $win.0.files yview]
+        autoscroll::autoscroll $win.0.scroll
+        pack $win.0.files -side left -fill both -expand 1
+        pack $win.0.scroll -side left -fill y
 
-	ttk::frame $win.1
-	foreach name {play resume pause abort delete} {
-	    ttk::button $win.1.$name -text [string totitle $name] -width [string length $name] -command [list $self [string totitle $name]]
-	}
-	ttk::button $win.1.upload -text "Upload" -width 6 -command [list $self Send "uploading" $options(-uploadconnection)]
-	ttk::button $win.1.send   -text "Send"   -width 4 -command [list $self Send "sending" $conn]
+        ttk::frame $win.1
+        foreach name {play resume pause abort delete} {
+            ttk::button $win.1.$name -text [string totitle $name] -width [string length $name] -command [list $self [string totitle $name]]
+        }
+        ttk::button $win.1.upload -text "Upload" -width 6 -command [list $self Send "uploading" $options(-uploadconnection)]
+        ttk::button $win.1.send   -text "Send"   -width 4 -command [list $self Send "sending" $conn]
 
-	grid $win.1.play $win.1.resume $win.1.pause $win.1.abort -sticky news
-	grid $win.1.delete $win.1.upload $win.1.send -sticky news
+        grid $win.1.play $win.1.resume $win.1.pause $win.1.abort -sticky news
+        grid $win.1.delete $win.1.upload $win.1.send -sticky news
 
-	ttk::frame   $win.2
-	ttk::label   $win.2.feedspeedl1 -text "Feed speed:"
-	ttk::spinbox $win.2.feedspeed -from 1 -to 300 -increment 10 -width 4 -validate all -validatecommand {string is integer %P} -textvariable [myvar feedspeed]
-	ttk::label   $win.2.feedspeedl2 -text "%"
-	ttk::button  $win.2.feedset -width 3 -text "Set" -command [list $conn command $selfns {M220 S$feedspeed ; Set feed speed}]
-	ttk::label   $win.2.flowspeedl1 -text "Flow speed:"
-	ttk::spinbox $win.2.flowspeed -from 1 -to 300 -increment 10 -width 4 -validate all -validatecommand {string is integer %P} -textvariable [myvar flowspeed]
-	ttk::label   $win.2.flowspeedl2 -text "%"
-	ttk::button  $win.2.flowset -width 3 -text "Set" -command [list $conn command $selfns {M221 S$flowspeed ; Set flow speed}]
+        ttk::frame   $win.2
+        ttk::label   $win.2.feedspeedl1 -text "Feed speed:"
+        ttk::spinbox $win.2.feedspeed -from 1 -to 300 -increment 10 -width 4 -validate all -validatecommand {string is integer %P} -textvariable [myvar feedspeed]
+        ttk::label   $win.2.feedspeedl2 -text "%"
+        ttk::button  $win.2.feedset -width 3 -text "Set" -command [list $conn command $selfns {M220 S$feedspeed ; Set feed speed}]
+        ttk::label   $win.2.flowspeedl1 -text "Flow speed:"
+        ttk::spinbox $win.2.flowspeed -from 1 -to 300 -increment 10 -width 4 -validate all -validatecommand {string is integer %P} -textvariable [myvar flowspeed]
+        ttk::label   $win.2.flowspeedl2 -text "%"
+        ttk::button  $win.2.flowset -width 3 -text "Set" -command [list $conn command $selfns {M221 S$flowspeed ; Set flow speed}]
 
-	grid $win.2.feedspeedl1 $win.2.feedspeed $win.2.feedspeedl2 $win.2.feedset -sticky news
-	grid $win.2.flowspeedl1 $win.2.flowspeed $win.2.flowspeedl2 $win.2.flowset -sticky news
+        grid $win.2.feedspeedl1 $win.2.feedspeed $win.2.feedspeedl2 $win.2.feedset -sticky news
+        grid $win.2.flowspeedl1 $win.2.flowspeed $win.2.flowspeedl2 $win.2.flowset -sticky news
 
-	progresstime $win.progress -variable [$printer statusvar progress]
+        progresstime $win.progress -variable [$printer statusvar progress]
 
-	pack $win.0 -fill both
-	pack $win.1 $win.2 $win.progress -fill x
+        pack $win.0 -fill both
+        pack $win.1 $win.2 $win.progress -fill x
 
-	trace add variable [.printer statusvar mode] write [list $self ModeChanged]
-	$self ModeChanged
+        trace add variable [.printer statusvar mode] write [list $self ModeChanged]
+        $self ModeChanged
     }
 
     method Resume {} { # private
-	if {[info commands $win.sender] ne ""} {
-	    $conn print "Player: resume\n"
-	    $win.sender setRunning 1
-	} else {
-	    $conn send "M24 ; Resume"
-	}
+        if {[info commands $win.sender] ne ""} {
+            $conn print "Player: resume\n"
+            $win.sender setRunning 1
+        } else {
+            $conn send "M24 ; Resume"
+        }
     }
 
     method Pause {} { # private
-	if {[info commands $win.sender] ne ""} {
-	    $conn print "Player: pause\n"
-	    $win.sender setRunning 0
-	} else {
-	    $conn send "M25 ; Pause"
-	}
+        if {[info commands $win.sender] ne ""} {
+            $conn print "Player: pause\n"
+            $win.sender setRunning 0
+        } else {
+            $conn send "M25 ; Pause"
+        }
     }
 
     method Abort {} { # private
-	if {[info commands $win.sender] ne ""} {
-	    $conn print "Player: aborted\n"
-	    $win.sender destroy
-	} else {
-	    $conn send "M26 ; Abort"
-	}
+        if {[info commands $win.sender] ne ""} {
+            $conn print "Player: aborted\n"
+            $win.sender destroy
+        } else {
+            $conn send "M26 ; Abort"
+        }
     }
 
     method Play {} { # private
-	if {[set file [$win.0.files curselection]] eq ""} {
-	    $conn print "Player: No file selected\n" error
-	} else {
-	    $conn send "M32 [$win.0.files get $file] ; Play file"
-	    $printer status mode playing
-	}
+        if {[set file [$win.0.files curselection]] eq ""} {
+            $conn print "Player: No file selected\n" error
+        } else {
+            $conn send "M32 [$win.0.files get $file] ; Play file"
+            $printer status mode playing
+        }
     }
 
     method Delete {} { # private
-	if {[set file [$win.0.files curselection]] eq ""} {
-	    $conn print "Player: No file selected\n" error
-	} else {
-	    $conn send "M30 [$win.0.files get $file] ; Delete file"
-	    # todo update printer status immediately
-	}
+        if {[set file [$win.0.files curselection]] eq ""} {
+            $conn print "Player: No file selected\n" error
+        } else {
+            $conn send "M30 [$win.0.files get $file] ; Delete file"
+            # todo update printer status immediately
+        }
     }
 
     method Send {mode c} { # private
-	catch {destroy $win.sender}
-	sender $win.sender -connection $c -printer $printer -mode $mode
+        catch {destroy $win.sender}
+        sender $win.sender -connection $c -printer $printer -mode $mode
     }
 
     method ModeChanged {args} { # private
-	set mode [$printer status mode]
-	foreach name {play delete upload send} {
-	    $win.1.$name configure -state [expr {($mode eq "idle" || $mode eq "uploading") ? "normal" : "disabled"}]
-	}
-	foreach name {resume pause abort} {
-	    $win.1.$name configure -state [expr {($mode eq "idle" || $mode eq "uploading") ? "disabled" : "normal"}]
-	}
+        set mode [$printer status mode]
+        foreach name {play delete upload send} {
+            $win.1.$name configure -state [expr {($mode eq "idle" || $mode eq "uploading") ? "normal" : "disabled"}]
+        }
+        foreach name {resume pause abort} {
+            $win.1.$name configure -state [expr {($mode eq "idle" || $mode eq "uploading") ? "disabled" : "normal"}]
+        }
     }
 }
 
@@ -1325,110 +1325,110 @@ snit::widget console {
     variable log
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	ttk::frame $win.0
-	text $win.0.output -width 50 -wrap word -font "Monospace 10" -yscrollcommand [list $win.0.scroll set]
-	ttk::scrollbar $win.0.scroll -orient vertical -command [list $win.0.output yview]
-	autoscroll::autoscroll $win.0.scroll
-	pack $win.0.output -side left -expand 1 -fill both
-	pack $win.0.scroll -side left -fill y
+        ttk::frame $win.0
+        text $win.0.output -width 50 -wrap word -font "Monospace 10" -yscrollcommand [list $win.0.scroll set]
+        ttk::scrollbar $win.0.scroll -orient vertical -command [list $win.0.output yview]
+        autoscroll::autoscroll $win.0.scroll
+        pack $win.0.output -side left -expand 1 -fill both
+        pack $win.0.scroll -side left -fill y
 
-	ttk::frame $win.1
-	ttk::entry $win.1.command -font "Monospace 12" -textvariable [myvar command]
-	history::init $win.1.command
-	bind $win.1.command <Key-Return> [list $self SendCommand]
+        ttk::frame $win.1
+        ttk::entry $win.1.command -font "Monospace 12" -textvariable [myvar command]
+        history::init $win.1.command
+        bind $win.1.command <Key-Return> [list $self SendCommand]
 
-	ttk::checkbutton $win.1.locked -text "Locked" -variable [myvar locked]
-	pack $win.1.command -side left -expand 1 -fill x -padx 10 -pady 10
-	pack $win.1.locked -side left
+        ttk::checkbutton $win.1.locked -text "Locked" -variable [myvar locked]
+        pack $win.1.command -side left -expand 1 -fill x -padx 10 -pady 10
+        pack $win.1.locked -side left
 
-	pack $win.0 -fill both -expand 1
-	pack $win.1 -fill x
+        pack $win.0 -fill both -expand 1
+        pack $win.1 -fill x
 
-	$win.0.output tag configure error -foreground red
-	$win.0.output tag configure comment -foreground gray
-	$win.0.output tag configure send -foreground blue -font "Monospace 12"
-	$win.0.output tag configure receive -foreground brown -font "Monospace 12"
+        $win.0.output tag configure error -foreground red
+        $win.0.output tag configure comment -foreground gray
+        $win.0.output tag configure send -foreground blue -font "Monospace 12"
+        $win.0.output tag configure receive -foreground brown -font "Monospace 12"
 
-	$win.0.output configure -state disabled
-	focus $win.1.command
+        $win.0.output configure -state disabled
+        focus $win.1.command
 
-	set conn $options(-connection)
-	$conn attach [list $self Event]
+        set conn $options(-connection)
+        $conn attach [list $self Event]
 
-	if {[set log $options(-log)] ne ""} {
-	    $self print "Logging to $log\n"
-	}
+        if {[set log $options(-log)] ne ""} {
+            $self print "Logging to $log\n"
+        }
     }
 
     method command {ns cmd} {
-	$self send [namespace inscope $ns "subst \"$cmd\""]
+        $self send [namespace inscope $ns "subst \"$cmd\""]
     }
 
     method setLocked {l} {
-	set locked $l
+        set locked $l
     }
 
     method print {data {tag ""}} {
-	set state [$win.0.output cget -state]
-	$win.0.output configure -state normal
-	$win.0.output insert end $data $tag
-	$win.0.output configure -state $state
-	$win.0.output yview moveto 1
+        set state [$win.0.output cget -state]
+        $win.0.output configure -state normal
+        $win.0.output insert end $data $tag
+        $win.0.output configure -state $state
+        $win.0.output yview moveto 1
 
-	if {$log ne ""} {
-	    catch {
-		set fh [open $log a]
-		puts -nonewline $fh $data
-		close $fh
-	    }
-	}
+        if {$log ne ""} {
+            catch {
+                set fh [open $log a]
+                puts -nonewline $fh $data
+                close $fh
+            }
+        }
     }
 
     method send {data {force 0}} {
-	set l [expr {$locked && !$force}]
-	set prefix [expr {$l ? "\u25B7" : "\u25B6"}]
-	foreach line [split $data "\n"] {
-	    if {[regexp {\A\s*([^;]+?)\s*;\s*(.+?)\s*\Z} $line match code comment]} {
-		$self print "$prefix $code\t\t\t\t\t" send
-		$self print "; $comment\n" comment
-	    } elseif {[regexp {\A\s*([^;]*?)\s*\Z} $line match code]} {
-		$self print "$prefix $code\n" send
-	    } elseif {[regexp {\A\s*;\s*(.+?)\s*\Z} $line match comment]} {
-		$self print "; $comment\n" comment
-	    }
-	}
-	if {$l} {
-	    $self print "Locked - not sending.\n" error
-	} else {
-	    if {[$conn connected]} {
-		$conn send $data
-	    } else {
-		$self print "Disconnected\n" error
-	    }
-	}
+        set l [expr {$locked && !$force}]
+        set prefix [expr {$l ? "\u25B7" : "\u25B6"}]
+        foreach line [split $data "\n"] {
+            if {[regexp {\A\s*([^;]+?)\s*;\s*(.+?)\s*\Z} $line match code comment]} {
+                $self print "$prefix $code\t\t\t\t\t" send
+                $self print "; $comment\n" comment
+            } elseif {[regexp {\A\s*([^;]*?)\s*\Z} $line match code]} {
+                $self print "$prefix $code\n" send
+            } elseif {[regexp {\A\s*;\s*(.+?)\s*\Z} $line match comment]} {
+                $self print "; $comment\n" comment
+            }
+        }
+        if {$l} {
+            $self print "Locked - not sending.\n" error
+        } else {
+            if {[$conn connected]} {
+                $conn send $data
+            } else {
+                $self print "Disconnected\n" error
+            }
+        }
     }
 
     method SendCommand {} { # private
-	if {[set trimmed [string trim $command]] ne ""} {
-	    $self send $trimmed
-	    history::add $win.1.command $trimmed
-	    set command ""
-	}
+        if {[set trimmed [string trim $command]] ne ""} {
+            $self send $trimmed
+            history::add $win.1.command $trimmed
+            set command ""
+        }
     }
 
     method Event {c event data} { # private
-	if {$event eq "connect"} {
-	    $self print "Connected\n"
-	} elseif {$event eq "disconnect"} {
-	    $self print "Disconnected: $data\n" error
-	} elseif {$event eq "receive"} {
-	    # todo hack remove first prompt (smoothie specific #625)
-	    regsub -line {^>\s*} $data "" data
-	    regsub -all -line {^(.)} $data "\u25C0 \\1" data
-	    $self print $data receive
-	}
+        if {$event eq "connect"} {
+            $self print "Connected\n"
+        } elseif {$event eq "disconnect"} {
+            $self print "Disconnected: $data\n" error
+        } elseif {$event eq "receive"} {
+            # todo hack remove first prompt (smoothie specific #625)
+            regsub -line {^>\s*} $data "" data
+            regsub -all -line {^(.)} $data "\u25C0 \\1" data
+            $self print $data receive
+        }
     }
 }
 
@@ -1437,21 +1437,21 @@ snit::widget printerstatus {
     option -printer
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
         $hull configure -text "Status"
 
-	foreach var {mode connected hotend bed position axis e} {
-	    set label [printer statuslegend $var]
-	    set unit ""
-	    regexp {\A(.*?)\s*\((.*?)\)\Z} $label matched label unit
-	    ttk::label $win.label$var -text $label: -anchor e
-	    ttk::frame $win.$var
-	    ttk::label $win.$var.value -textvariable [$options(-printer) statusvar $var] -anchor e
-	    ttk::label $win.$var.unit -text $unit -anchor w
-	    pack $win.$var.value $win.$var.unit -side left
-	    grid $win.label$var $win.$var -sticky news
-	}
+        foreach var {mode connected hotend bed position axis e} {
+            set label [printer statuslegend $var]
+            set unit ""
+            regexp {\A(.*?)\s*\((.*?)\)\Z} $label matched label unit
+            ttk::label $win.label$var -text $label: -anchor e
+            ttk::frame $win.$var
+            ttk::label $win.$var.value -textvariable [$options(-printer) statusvar $var] -anchor e
+            ttk::label $win.$var.unit -text $unit -anchor w
+            pack $win.$var.value $win.$var.unit -side left
+            grid $win.label$var $win.$var -sticky news
+        }
     }
 }
 
@@ -1579,66 +1579,66 @@ snit::widget gcodelookup {
     }
 
     constructor {args} {
-	$self configurelist $args
+        $self configurelist $args
 
-	$hull configure -text "G-Code lookup"
+        $hull configure -text "G-Code lookup"
 
-	ttk::entry $win.filter -textvariable [myvar filter]
-	tablelist::tablelist $win.codes -columns {0 "Code" 0 "Description"} -stretch all -background white -spacing 12 -height 9 -showlabels 0
+        ttk::entry $win.filter -textvariable [myvar filter]
+        tablelist::tablelist $win.codes -columns {0 "Code" 0 "Description"} -stretch all -background white -spacing 12 -height 9 -showlabels 0
 
-	$win.codes columnconfigure 0 -font {-size 8 -weight bold}
-	$win.codes columnconfigure 1 -wrap 1 -font {-size 8}
+        $win.codes columnconfigure 0 -font {-size 8 -weight bold}
+        $win.codes columnconfigure 1 -wrap 1 -font {-size 8}
 
-	set i 0
-	foreach {code desc example} $gcodes {
-	    if {$code ne $example} {
-		set desc "$desc\n\nExample: $example"
-	    }
-	    $win.codes insert end [list $code $desc]
-	    set hidden($i) 0
-	    incr i
-	}
+        set i 0
+        foreach {code desc example} $gcodes {
+            if {$code ne $example} {
+                set desc "$desc\n\nExample: $example"
+            }
+            $win.codes insert end [list $code $desc]
+            set hidden($i) 0
+            incr i
+        }
 
-	pack $win.filter $win.codes -fill both -expand 1 -side top
+        pack $win.filter $win.codes -fill both -expand 1 -side top
 
-	trace add variable filter write [list $self Filter]
+        trace add variable filter write [list $self Filter]
 
-	bind [$win.codes bodytag] <Double-Button-1> [list $self DoubleClick %W %x %y]
+        bind [$win.codes bodytag] <Double-Button-1> [list $self DoubleClick %W %x %y]
     }
 
     method DoubleClick {w x y} { # private
-	lassign [tablelist::convEventFields $w $x $y] w x y
-	scan [$win.codes containingcell $x $y] "%d,%d" row col
-	if {$row >= 0 && $col >= 0} {
-	    set example [lindex $gcodes [expr {3 * $row + 2}]]
-	    set command $options(-command)
-	    set [$command cget -textvariable] $example
-	    focus $command
-	    $command icursor [string length $example]
-	}
+        lassign [tablelist::convEventFields $w $x $y] w x y
+        scan [$win.codes containingcell $x $y] "%d,%d" row col
+        if {$row >= 0 && $col >= 0} {
+            set example [lindex $gcodes [expr {3 * $row + 2}]]
+            set command $options(-command)
+            set [$command cget -textvariable] $example
+            focus $command
+            $command icursor [string length $example]
+        }
     }
 
     method Filter {args} { # private
-	set i 0
-	set toggle {}
-	set f "*$filter*"
-	foreach {code desc example} $gcodes {
-	    if {[string match -nocase $f $code] ||
-		[string match -nocase $f $desc] ||
-		[string match -nocase $f $example]} {
-		if {$hidden($i)} {
-		    lappend toggle $i
-		    set hidden($i) 0
-		}
-	    } else {
-		if {!$hidden($i)} {
-		    lappend toggle $i
-		    set hidden($i) 1
-		}
-	    }
-	    incr i
-	}
-	$win.codes togglerowhide $toggle
+        set i 0
+        set toggle {}
+        set f "*$filter*"
+        foreach {code desc example} $gcodes {
+            if {[string match -nocase $f $code] ||
+                [string match -nocase $f $desc] ||
+                [string match -nocase $f $example]} {
+                if {$hidden($i)} {
+                    lappend toggle $i
+                    set hidden($i) 0
+                }
+            } else {
+                if {!$hidden($i)} {
+                    lappend toggle $i
+                    set hidden($i) 1
+                }
+            }
+            incr i
+        }
+        $win.codes togglerowhide $toggle
     }
 }
 
